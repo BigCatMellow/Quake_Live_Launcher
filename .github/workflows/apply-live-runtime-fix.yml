@@ -21,84 +21,21 @@ jobs:
           python - <<'PY'
           import base64
           from pathlib import Path
-
+          decode = lambda value: base64.b64decode(value).decode('utf-8')
           path = Path('solo_engine/plugins/solo_arcade.py')
           text = path.read_text(encoding='utf-8')
-
-          old = '''            "bot_enable": "1", "bot_thinktime": "0", "bot_challenge": "1",
-            "bot_minplayers": "0", "fraglimit": "0", "timelimit": "0",
-'''
-          new = '''            "bot_enable": "1", "bot_thinktime": "0", "bot_challenge": "1",
-            "bot_aasoptimize": "1", "bot_rocketjump": "1", "bot_nochat": "1",
-            "bot_dynamicskill": "0", "bot_minplayers": "0",
-            "fraglimit": "0", "timelimit": "0",
-'''
-          assert text.count(old) == 1, 'bot cvar block changed unexpectedly'
-          text = text.replace(old, new)
-
-          old = '''    def _handle_human_death(self, victim):
-        if self.controller.phase in (Phase.COMPLETE, Phase.FAILED):
-            return
-        self.player_deaths += 1
-'''
-          new = '''    def _handle_human_death(self, victim):
-        if self.controller.phase in (Phase.COMPLETE, Phase.FAILED):
-            return
-        # Quake Live can emit a death while the joining client is moved onto
-        # RED or while a new objective/map is still PREPARING. That transition
-        # is not a gameplay loss; deaths only count once the objective is live.
-        if self.controller.phase != Phase.ACTIVE:
-            self._log(f"ignored pre-active human death phase={self.controller.phase.value}")
-            return
-        self.player_deaths += 1
-'''
-          assert text.count(old) == 1, 'human death block changed unexpectedly'
-          text = text.replace(old, new)
-
-          old = '''    def _apply_bot_loadout(self, player):
-        plan = self.current_plan or {}
-        try:
-            if self.mode in ("arena_run", "boss_rush", "gauntlet_run") and plan:
-                player.health = int(plan.get("health", 100))
-                player.armor = int(plan.get("armor", 0))
-                trial = {"rocket": 5, "lg": 6, "rail": 7, "plasma": 8}.get(plan.get("theme"))
-                if trial: self._give_single_weapon(player, trial)
-                elif plan.get("boss"): self._give_single_weapon(player, 5)
-        except Exception as exc:
-            self._log(f"bot loadout failed: {exc}")
-'''
-          new = '''    def _apply_bot_loadout(self, player):
-        plan = self.current_plan or {}
-        try:
-            # Scripted servers disable map weapon/ammo pickups. Give every bot
-            # a combat-ready loadout so its AI can immediately hunt the human
-            # instead of spending the opening of a wave searching for gear.
-            player.health = int(plan.get("health", 100)) if plan else 100
-            player.armor = int(plan.get("armor", 25)) if plan else 25
-            player.weapons(
-                reset=True,
-                g=True, mg=True, sg=True, gl=True,
-                rl=True, lg=True, rg=True, pg=True,
-            )
-            player.ammo(
-                reset=True,
-                mg=160, sg=40, gl=30, rl=40,
-                lg=120, rg=25, pg=120,
-            )
-
-            if self.mode in ("arena_run", "boss_rush", "gauntlet_run") and plan:
-                trial = {"rocket": 5, "lg": 6, "rail": 7, "plasma": 8}.get(plan.get("theme"))
-                if trial:
-                    self._give_single_weapon(player, trial)
-                elif plan.get("boss"):
-                    self._give_single_weapon(player, 5)
-        except Exception as exc:
-            self._log(f"bot loadout failed: {exc}")
-'''
-          assert text.count(old) == 1, 'bot loadout block changed unexpectedly'
+          patches = [
+              ('cvars', 'ICAgICAgICAgICAgImJvdF9lbmFibGUiOiAiMSIsICJib3RfdGhpbmt0aW1lIjogIjAiLCAiYm90X2NoYWxsZW5nZSI6ICIxIiwKICAgICAgICAgICAgImJvdF9taW5wbGF5ZXJzIjogIjAiLCAiZnJhZ2xpbWl0IjogIjAiLCAidGltZWxpbWl0IjogIjAiLAo=', 'ICAgICAgICAgICAgImJvdF9lbmFibGUiOiAiMSIsICJib3RfdGhpbmt0aW1lIjogIjAiLCAiYm90X2NoYWxsZW5nZSI6ICIxIiwKICAgICAgICAgICAgImJvdF9hYXNvcHRpbWl6ZSI6ICIxIiwgImJvdF9yb2NrZXRqdW1wIjogIjEiLCAiYm90X25vY2hhdCI6ICIxIiwKICAgICAgICAgICAgImJvdF9keW5hbWljc2tpbGwiOiAiMCIsICJib3RfbWlucGxheWVycyI6ICIwIiwKICAgICAgICAgICAgImZyYWdsaW1pdCI6ICIwIiwgInRpbWVsaW1pdCI6ICIwIiwK'),
+              ('death', 'ICAgIGRlZiBfaGFuZGxlX2h1bWFuX2RlYXRoKHNlbGYsIHZpY3RpbSk6CiAgICAgICAgaWYgc2VsZi5jb250cm9sbGVyLnBoYXNlIGluIChQaGFzZS5DT01QTEVURSwgUGhhc2UuRkFJTEVEKToKICAgICAgICAgICAgcmV0dXJuCiAgICAgICAgc2VsZi5wbGF5ZXJfZGVhdGhzICs9IDEK', 'ICAgIGRlZiBfaGFuZGxlX2h1bWFuX2RlYXRoKHNlbGYsIHZpY3RpbSk6CiAgICAgICAgaWYgc2VsZi5jb250cm9sbGVyLnBoYXNlIGluIChQaGFzZS5DT01QTEVURSwgUGhhc2UuRkFJTEVEKToKICAgICAgICAgICAgcmV0dXJuCiAgICAgICAgIyBRdWFrZSBMaXZlIGNhbiBlbWl0IGEgZGVhdGggd2hpbGUgdGhlIGpvaW5pbmcgY2xpZW50IGlzIG1vdmVkIG9udG8KICAgICAgICAjIFJFRCBvciB3aGlsZSBhIG5ldyBvYmplY3RpdmUvbWFwIGlzIHN0aWxsIFBSRVBBUklORy4gVGhhdCB0cmFuc2l0aW9uCiAgICAgICAgIyBpcyBub3QgYSBnYW1lcGxheSBsb3NzOyBkZWF0aHMgb25seSBjb3VudCBvbmNlIHRoZSBvYmplY3RpdmUgaXMgbGl2ZS4KICAgICAgICBpZiBzZWxmLmNvbnRyb2xsZXIucGhhc2UgIT0gUGhhc2UuQUNUSVZFOgogICAgICAgICAgICBzZWxmLl9sb2coZiJpZ25vcmVkIHByZS1hY3RpdmUgaHVtYW4gZGVhdGggcGhhc2U9e3NlbGYuY29udHJvbGxlci5waGFzZS52YWx1ZX0iKQogICAgICAgICAgICByZXR1cm4KICAgICAgICBzZWxmLnBsYXllcl9kZWF0aHMgKz0gMQo='),
+              ('loadout', 'ICAgIGRlZiBfYXBwbHlfYm90X2xvYWRvdXQoc2VsZiwgcGxheWVyKToKICAgICAgICBwbGFuID0gc2VsZi5jdXJyZW50X3BsYW4gb3Ige30KICAgICAgICB0cnk6CiAgICAgICAgICAgIGlmIHNlbGYubW9kZSBpbiAoImFyZW5hX3J1biIsICJib3NzX3J1c2giLCAiZ2F1bnRsZXRfcnVuIikgYW5kIHBsYW46CiAgICAgICAgICAgICAgICBwbGF5ZXIuaGVhbHRoID0gaW50KHBsYW4uZ2V0KCJoZWFsdGgiLCAxMDApKQogICAgICAgICAgICAgICAgcGxheWVyLmFybW9yID0gaW50KHBsYW4uZ2V0KCJhcm1vciIsIDApKQogICAgICAgICAgICAgICAgdHJpYWwgPSB7InJvY2tldCI6IDUsICJsZyI6IDYsICJyYWlsIjogNywgInBsYXNtYSI6IDh9LmdldChwbGFuLmdldCgidGhlbWUiKSkKICAgICAgICAgICAgICAgIGlmIHRyaWFsOiBzZWxmLl9naXZlX3NpbmdsZV93ZWFwb24ocGxheWVyLCB0cmlhbCkKICAgICAgICAgICAgICAgIGVsaWYgcGxhbi5nZXQoImJvc3MiKTogc2VsZi5fZ2l2ZV9zaW5nbGVfd2VhcG9uKHBsYXllciwgNSkKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGV4YzoKICAgICAgICAgICAgc2VsZi5fbG9nKGYiYm90IGxvYWRvdXQgZmFpbGVkOiB7ZXhjfSIpCg==', 'ICAgIGRlZiBfYXBwbHlfYm90X2xvYWRvdXQoc2VsZiwgcGxheWVyKToKICAgICAgICBwbGFuID0gc2VsZi5jdXJyZW50X3BsYW4gb3Ige30KICAgICAgICB0cnk6CiAgICAgICAgICAgICMgU2NyaXB0ZWQgc2VydmVycyBkaXNhYmxlIG1hcCB3ZWFwb24vYW1tbyBwaWNrdXBzLiBHaXZlIGV2ZXJ5IGJvdAogICAgICAgICAgICAjIGEgY29tYmF0LXJlYWR5IGxvYWRvdXQgc28gaXRzIEFJIGNhbiBpbW1lZGlhdGVseSBodW50IHRoZSBodW1hbgogICAgICAgICAgICAjIGluc3RlYWQgb2Ygc3BlbmRpbmcgdGhlIG9wZW5pbmcgb2YgYSB3YXZlIHNlYXJjaGluZyBmb3IgZ2Vhci4KICAgICAgICAgICAgcGxheWVyLmhlYWx0aCA9IGludChwbGFuLmdldCgiaGVhbHRoIiwgMTAwKSkgaWYgcGxhbiBlbHNlIDEwMAogICAgICAgICAgICBwbGF5ZXIuYXJtb3IgPSBpbnQocGxhbi5nZXQoImFybW9yIiwgMjUpKSBpZiBwbGFuIGVsc2UgMjUKICAgICAgICAgICAgcGxheWVyLndlYXBvbnMoCiAgICAgICAgICAgICAgICByZXNldD1UcnVlLAogICAgICAgICAgICAgICAgZz1UcnVlLCBtZz1UcnVlLCBzZz1UcnVlLCBnbD1UcnVlLAogICAgICAgICAgICAgICAgcmw9VHJ1ZSwgbGc9VHJ1ZSwgcmc9VHJ1ZSwgcGc9VHJ1ZSwKICAgICAgICAgICAgKQogICAgICAgICAgICBwbGF5ZXIuYW1tbygKICAgICAgICAgICAgICAgIHJlc2V0PVRydWUsCiAgICAgICAgICAgICAgICBtZz0xNjAsIHNnPTQwLCBnbD0zMCwgcmw9NDAsCiAgICAgICAgICAgICAgICBsZz0xMjAsIHJnPTI1LCBwZz0xMjAsCiAgICAgICAgICAgICkKCiAgICAgICAgICAgIGlmIHNlbGYubW9kZSBpbiAoImFyZW5hX3J1biIsICJib3NzX3J1c2giLCAiZ2F1bnRsZXRfcnVuIikgYW5kIHBsYW46CiAgICAgICAgICAgICAgICB0cmlhbCA9IHsicm9ja2V0IjogNSwgImxnIjogNiwgInJhaWwiOiA3LCAicGxhc21hIjogOH0uZ2V0KHBsYW4uZ2V0KCJ0aGVtZSIpKQogICAgICAgICAgICAgICAgaWYgdHJpYWw6CiAgICAgICAgICAgICAgICAgICAgc2VsZi5fZ2l2ZV9zaW5nbGVfd2VhcG9uKHBsYXllciwgdHJpYWwpCiAgICAgICAgICAgICAgICBlbGlmIHBsYW4uZ2V0KCJib3NzIik6CiAgICAgICAgICAgICAgICAgICAgc2VsZi5fZ2l2ZV9zaW5nbGVfd2VhcG9uKHBsYXllciwgNSkKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGV4YzoKICAgICAgICAgICAgc2VsZi5fbG9nKGYiYm90IGxvYWRvdXQgZmFpbGVkOiB7ZXhjfSIpCg=='),
+          ]
+          for label, old_b64, new_b64 in patches:
+              old = decode(old_b64)
+              new = decode(new_b64)
+              assert text.count(old) == 1, f'{label} block changed unexpectedly'
+              text = text.replace(old, new)
           path.write_text(text, encoding='utf-8')
-
-          test_b64 = 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IHVuaXR0ZXN0Cgpmcm9tIHRlc3RzLnRlc3RfdjVfcnVudGltZSBpbXBvcnQgUnVudGltZUhhcm5lc3MKCgpjbGFzcyBMaXZlUnVudGltZVJlZ3Jlc3Npb25zKHVuaXR0ZXN0LlRlc3RDYXNlKToKICAgIGRlZiBzZXRVcChzZWxmKToKICAgICAgICBzZWxmLmhhcm5lc3MgPSBSdW50aW1lSGFybmVzcyhtZXRob2ROYW1lPSJydW5UZXN0IikKICAgICAgICBzZWxmLmhhcm5lc3Muc2V0VXAoKQoKICAgIGRlZiB0ZWFyRG93bihzZWxmKToKICAgICAgICBzZWxmLmhhcm5lc3MudGVhckRvd24oKQoKICAgIGRlZiByZXNldF9oYXJuZXNzKHNlbGYpOgogICAgICAgIHNlbGYuaGFybmVzcy50ZWFyRG93bigpCiAgICAgICAgc2VsZi5oYXJuZXNzID0gUnVudGltZUhhcm5lc3MobWV0aG9kTmFtZT0icnVuVGVzdCIpCiAgICAgICAgc2VsZi5oYXJuZXNzLnNldFVwKCkKCiAgICBkZWYgdGVzdF9zdGFydHVwX2h1bWFuX2RlYXRobF9kb2VzX25vdF9lbmRfZmF0YWxfbW9kZXNfYmVmb3JlX2FjdGl2ZShzZWxmKToKICAgICAgICBtb2RlcyA9ICgKICAgICAgICAgICAgImhvcmRlIiwgImJvc3NfcnVzaCIsICJ3aXBlb3V0X3NvbG8iLCAiZ2F1bnRsZXRfcnVuIiwKICAgICAgICAgICAgImxhc3Rfc3RhbmQiLCAib25lX2xpZmUiLCAibW92ZW1lbnRfaHVudGVyIiwgInByZWRhdG9yIiwKICAgICAgICApCiAgICAgICAgZm9yIGluZGV4LCBtb2RlIGluIGVudW1lcmF0ZShtb2Rlcyk6CiAgICAgICAgICAgIHdpdGggc2VsZi5zdWJUZXN0KG1vZGU9bW9kZSk6CiAgICAgICAgICAgICAgICBpZiBpbmRleDoKICAgICAgICAgICAgICAgICAgICBzZWxmLnJlc2V0X2hhcm5lc3MoKQogICAgICAgICAgICAgICAgc2VydmVyLCBwbHVnaW4sIGh1bWFuID0gc2VsZi5oYXJuZXNzLmJvb3QobW9kZSkKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwocGx1Z2luLmNvbnRyb2xsZXIucGhhc2UudmFsdWUsICJwcmVwYXJpbmciKQogICAgICAgICAgICAgICAgYmVmb3JlID0gcGx1Z2luLnBsYXllcl9kZWF0aHMKICAgICAgICAgICAgICAgIHNlcnZlci5kZWF0aChodW1hbiwgTm9uZSkKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0Tm90RXF1YWwocGx1Z2luLmNvbnRyb2xsZXIucGhhc2UudmFsdWUsICJjb21wbGV0ZSIpCiAgICAgICAgICAgICAgICBzZWxmLmFzc2VydEVxdWFsKHBsdWdpbi5jb250cm9sbGVyLnBoYXNlLnZhbHVlLCAicHJlcGFyaW5nIikKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwocGx1Z2luLnBsYXllcl9kZWF0aHMsIGJlZm9yZSkKCiAgICBkZWYgdGVzdF9ob3JkZV9ib3RzX3JlY2VpdmVfY29tYmF0X2xvYWRvdXRfYW5kX2FnZ3Jlc3NpdmVfY3ZhcnMoc2VsZik6CiAgICAgICAgc2VydmVyLCBwbHVnaW4sIGh1bWFuID0gc2VsZi5oYXJuZXNzLmJvb3QoImhvcmRlIikKICAgICAgICBzZWxmLmhhcm5lc3Muc3Bhd25faW5pdGlhbChzZXJ2ZXIpCiAgICAgICAgYm90cyA9IHNlbGYuaGFybmVzcy5hY3RpdmVfYm90cyhzZXJ2ZXIsIHBsdWdpbikKICAgICAgICBzZWxmLmFzc2VydFRydWUoYm90cykKICAgICAgICBib3QgPSBib3RzWzBdCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKGJvdC5fd2VhcG9ucy5nZXQoInJsIikpCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKGJvdC5fd2VhcG9ucy5nZXQoImxnIikpCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKGJvdC5fd2VhcG9ucy5nZXQoInJnIikpCiAgICAgICAgc2VsZi5hc3NlcnRHcmVhdGVyKGJvdC5fYW1tby5ybCwgMCkKICAgICAgICBzZWxmLmFzc2VydEdyZWF0ZXIoYm90Ll9hbW1vLmxnLCAwKQogICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwoc2VydmVyLmN2YXJzLmdldCgiYm90X2R5bmFtaWNza2lsbCIpLCAiMCIpCiAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChzZXJ2ZXIuY3ZhcnMuZ2V0KCJib3RfYWFzb3B0aW1pemUiKSwgIjEiKQogICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwoc2VydmVyLmN2YXJzLmdldCgiYm90X3JvY2tldGp1bXAiKSwgIjEiKQoKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICB1bml0dGVzdC5tYWluKCkK'
+          test_b64 = 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IHVuaXR0ZXN0Cgpmcm9tIHRlc3RzLnRlc3RfdjVfcnVudGltZSBpbXBvcnQgUnVudGltZUhhcm5lc3MKCgpjbGFzcyBMaXZlUnVudGltZVJlZ3Jlc3Npb25zKHVuaXR0ZXN0LlRlc3RDYXNlKToKICAgIGRlZiBzZXRVcChzZWxmKToKICAgICAgICBzZWxmLmhhcm5lc3MgPSBSdW50aW1lSGFybmVzcyhtZXRob2ROYW1lPSJydW5UZXN0IikKICAgICAgICBzZWxmLmhhcm5lc3Muc2V0VXAoKQoKICAgIGRlZiB0ZWFyRG93bihzZWxmKToKICAgICAgICBzZWxmLmhhcm5lc3MudGVhckRvd24oKQoKICAgIGRlZiByZXNldF9oYXJuZXNzKHNlbGYpOgogICAgICAgIHNlbGYuaGFybmVzcy50ZWFyRG93bigpCiAgICAgICAgc2VsZi5oYXJuZXNzID0gUnVudGltZUhhcm5lc3MobWV0aG9kTmFtZT0icnVuVGVzdCIpCiAgICAgICAgc2VsZi5oYXJuZXNzLnNldFVwKCkKCiAgICBkZWYgdGVzdF9zdGFydHVwX2h1bWFuX2RlYXRoX2RvZXNfbm90X2VuZF9mYXRhbF9tb2Rlc19iZWZvcmVfYWN0aXZlKHNlbGYpOgogICAgICAgIG1vZGVzID0gKAogICAgICAgICAgICAiaG9yZGUiLCAiYm9zc19ydXNoIiwgIndpcGVvdXRfc29sbyIsICJnYXVudGxldF9ydW4iLAogICAgICAgICAgICAibGFzdF9zdGFuZCIsICJvbmVfbGlmZSIsICJtb3ZlbWVudF9odW50ZXIiLCAicHJlZGF0b3IiLAogICAgICAgICkKICAgICAgICBmb3IgaW5kZXgsIG1vZGUgaW4gZW51bWVyYXRlKG1vZGVzKToKICAgICAgICAgICAgd2l0aCBzZWxmLnN1YlRlc3QobW9kZT1tb2RlKToKICAgICAgICAgICAgICAgIGlmIGluZGV4OgogICAgICAgICAgICAgICAgICAgIHNlbGYucmVzZXRfaGFybmVzcygpCiAgICAgICAgICAgICAgICBzZXJ2ZXIsIHBsdWdpbiwgaHVtYW4gPSBzZWxmLmhhcm5lc3MuYm9vdChtb2RlKQogICAgICAgICAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChwbHVnaW4uY29udHJvbGxlci5waGFzZS52YWx1ZSwgInByZXBhcmluZyIpCiAgICAgICAgICAgICAgICBiZWZvcmUgPSBwbHVnaW4ucGxheWVyX2RlYXRocwogICAgICAgICAgICAgICAgc2VydmVyLmRlYXRoKGh1bWFuLCBOb25lKQogICAgICAgICAgICAgICAgc2VsZi5hc3NlcnROb3RFcXVhbChwbHVnaW4uY29udHJvbGxlci5waGFzZS52YWx1ZSwgImNvbXBsZXRlIikKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwocGx1Z2luLmNvbnRyb2xsZXIucGhhc2UudmFsdWUsICJwcmVwYXJpbmciKQogICAgICAgICAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChwbHVnaW4ucGxheWVyX2RlYXRocywgYmVmb3JlKQoKICAgIGRlZiB0ZXN0X2hvcmRlX2JvdHNfcmVjZWl2ZV9jb21iYXRfbG9hZG91dF9hbmRfYWdncmVzc2l2ZV9jdmFycyhzZWxmKToKICAgICAgICBzZXJ2ZXIsIHBsdWdpbiwgaHVtYW4gPSBzZWxmLmhhcm5lc3MuYm9vdCgiaG9yZGUiKQogICAgICAgIHNlbGYuaGFybmVzcy5zcGF3bl9pbml0aWFsKHNlcnZlcikKICAgICAgICBib3RzID0gc2VsZi5oYXJuZXNzLmFjdGl2ZV9ib3RzKHNlcnZlciwgcGx1Z2luKQogICAgICAgIHNlbGYuYXNzZXJ0VHJ1ZShib3RzKQogICAgICAgIGJvdCA9IGJvdHNbMF0KICAgICAgICBzZWxmLmFzc2VydFRydWUoYm90Ll93ZWFwb25zLmdldCgicmwiKSkKICAgICAgICBzZWxmLmFzc2VydFRydWUoYm90Ll93ZWFwb25zLmdldCgibGciKSkKICAgICAgICBzZWxmLmFzc2VydFRydWUoYm90Ll93ZWFwb25zLmdldCgicmciKSkKICAgICAgICBzZWxmLmFzc2VydEdyZWF0ZXIoYm90Ll9hbW1vLnJsLCAwKQogICAgICAgIHNlbGYuYXNzZXJ0R3JlYXRlcihib3QuX2FtbW8ubGcsIDApCiAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChzZXJ2ZXIuY3ZhcnMuZ2V0KCJib3RfZHluYW1pY3NraWxsIiksICIwIikKICAgICAgICBzZWxmLmFzc2VydEVxdWFsKHNlcnZlci5jdmFycy5nZXQoImJvdF9hYXNvcHRpbWl6ZSIpLCAiMSIpCiAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChzZXJ2ZXIuY3ZhcnMuZ2V0KCJib3Rfcm9ja2V0anVtcCIpLCAiMSIpCgoKaWYgX19uYW1lX18gPT0gIl9fbWFpbl9fIjoKICAgIHVuaXR0ZXN0Lm1haW4oKQo='
           Path('tests/test_live_runtime_regressions.py').write_bytes(base64.b64decode(test_b64))
           PY
 
