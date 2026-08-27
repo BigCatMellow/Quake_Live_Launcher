@@ -19,6 +19,7 @@ jobs:
       - name: Apply live-runtime repairs and regression tests
         run: |
           python - <<'PY'
+          import base64
           from pathlib import Path
 
           path = Path('solo_engine/plugins/solo_arcade.py')
@@ -97,62 +98,8 @@ jobs:
           assert text.count(old) == 1, 'bot loadout block changed unexpectedly'
           path.write_text(text, encoding='utf-8')
 
-          Path('tests/test_live_runtime_regressions.py').write_text('''from __future__ import annotations
-
-import unittest
-
-from tests.test_v5_runtime import RuntimeHarness
-
-
-class LiveRuntimeRegressions(unittest.TestCase):
-    def setUp(self):
-        self.harness = RuntimeHarness(methodName="runTest")
-        self.harness.setUp()
-
-    def tearDown(self):
-        self.harness.tearDown()
-
-    def reset_harness(self):
-        self.harness.tearDown()
-        self.harness = RuntimeHarness(methodName="runTest")
-        self.harness.setUp()
-
-    def test_startup_human_death_does_not_end_fatal_modes_before_active(self):
-        modes = (
-            "horde", "boss_rush", "wipeout_solo", "gauntlet_run",
-            "last_stand", "one_life", "movement_hunter", "predator",
-        )
-        for index, mode in enumerate(modes):
-            with self.subTest(mode=mode):
-                if index:
-                    self.reset_harness()
-                server, plugin, human = self.harness.boot(mode)
-                self.assertEqual(plugin.controller.phase.value, "preparing")
-                before = plugin.player_deaths
-                server.death(human, None)
-                self.assertNotEqual(plugin.controller.phase.value, "complete")
-                self.assertEqual(plugin.controller.phase.value, "preparing")
-                self.assertEqual(plugin.player_deaths, before)
-
-    def test_horde_bots_receive_combat_loadout_and_aggressive_cvars(self):
-        server, plugin, human = self.harness.boot("horde")
-        self.harness.spawn_initial(server)
-        bots = self.harness.active_bots(server, plugin)
-        self.assertTrue(bots)
-        bot = bots[0]
-        self.assertTrue(bot._weapons.get("rl"))
-        self.assertTrue(bot._weapons.get("lg"))
-        self.assertTrue(bot._weapons.get("rg"))
-        self.assertGreater(bot._ammo.rl, 0)
-        self.assertGreater(bot._ammo.lg, 0)
-        self.assertEqual(server.cvars.get("bot_dynamicskill"), "0")
-        self.assertEqual(server.cvars.get("bot_aasoptimize"), "1")
-        self.assertEqual(server.cvars.get("bot_rocketjump"), "1")
-
-
-if __name__ == "__main__":
-    unittest.main()
-''', encoding='utf-8')
+          test_b64 = 'ZnJvbSBfX2Z1dHVyZV9fIGltcG9ydCBhbm5vdGF0aW9ucwoKaW1wb3J0IHVuaXR0ZXN0Cgpmcm9tIHRlc3RzLnRlc3RfdjVfcnVudGltZSBpbXBvcnQgUnVudGltZUhhcm5lc3MKCgpjbGFzcyBMaXZlUnVudGltZVJlZ3Jlc3Npb25zKHVuaXR0ZXN0LlRlc3RDYXNlKToKICAgIGRlZiBzZXRVcChzZWxmKToKICAgICAgICBzZWxmLmhhcm5lc3MgPSBSdW50aW1lSGFybmVzcyhtZXRob2ROYW1lPSJydW5UZXN0IikKICAgICAgICBzZWxmLmhhcm5lc3Muc2V0VXAoKQoKICAgIGRlZiB0ZWFyRG93bihzZWxmKToKICAgICAgICBzZWxmLmhhcm5lc3MudGVhckRvd24oKQoKICAgIGRlZiByZXNldF9oYXJuZXNzKHNlbGYpOgogICAgICAgIHNlbGYuaGFybmVzcy50ZWFyRG93bigpCiAgICAgICAgc2VsZi5oYXJuZXNzID0gUnVudGltZUhhcm5lc3MobWV0aG9kTmFtZT0icnVuVGVzdCIpCiAgICAgICAgc2VsZi5oYXJuZXNzLnNldFVwKCkKCiAgICBkZWYgdGVzdF9zdGFydHVwX2h1bWFuX2RlYXRobF9kb2VzX25vdF9lbmRfZmF0YWxfbW9kZXNfYmVmb3JlX2FjdGl2ZShzZWxmKToKICAgICAgICBtb2RlcyA9ICgKICAgICAgICAgICAgImhvcmRlIiwgImJvc3NfcnVzaCIsICJ3aXBlb3V0X3NvbG8iLCAiZ2F1bnRsZXRfcnVuIiwKICAgICAgICAgICAgImxhc3Rfc3RhbmQiLCAib25lX2xpZmUiLCAibW92ZW1lbnRfaHVudGVyIiwgInByZWRhdG9yIiwKICAgICAgICApCiAgICAgICAgZm9yIGluZGV4LCBtb2RlIGluIGVudW1lcmF0ZShtb2Rlcyk6CiAgICAgICAgICAgIHdpdGggc2VsZi5zdWJUZXN0KG1vZGU9bW9kZSk6CiAgICAgICAgICAgICAgICBpZiBpbmRleDoKICAgICAgICAgICAgICAgICAgICBzZWxmLnJlc2V0X2hhcm5lc3MoKQogICAgICAgICAgICAgICAgc2VydmVyLCBwbHVnaW4sIGh1bWFuID0gc2VsZi5oYXJuZXNzLmJvb3QobW9kZSkKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwocGx1Z2luLmNvbnRyb2xsZXIucGhhc2UudmFsdWUsICJwcmVwYXJpbmciKQogICAgICAgICAgICAgICAgYmVmb3JlID0gcGx1Z2luLnBsYXllcl9kZWF0aHMKICAgICAgICAgICAgICAgIHNlcnZlci5kZWF0aChodW1hbiwgTm9uZSkKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0Tm90RXF1YWwocGx1Z2luLmNvbnRyb2xsZXIucGhhc2UudmFsdWUsICJjb21wbGV0ZSIpCiAgICAgICAgICAgICAgICBzZWxmLmFzc2VydEVxdWFsKHBsdWdpbi5jb250cm9sbGVyLnBoYXNlLnZhbHVlLCAicHJlcGFyaW5nIikKICAgICAgICAgICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwocGx1Z2luLnBsYXllcl9kZWF0aHMsIGJlZm9yZSkKCiAgICBkZWYgdGVzdF9ob3JkZV9ib3RzX3JlY2VpdmVfY29tYmF0X2xvYWRvdXRfYW5kX2FnZ3Jlc3NpdmVfY3ZhcnMoc2VsZik6CiAgICAgICAgc2VydmVyLCBwbHVnaW4sIGh1bWFuID0gc2VsZi5oYXJuZXNzLmJvb3QoImhvcmRlIikKICAgICAgICBzZWxmLmhhcm5lc3Muc3Bhd25faW5pdGlhbChzZXJ2ZXIpCiAgICAgICAgYm90cyA9IHNlbGYuaGFybmVzcy5hY3RpdmVfYm90cyhzZXJ2ZXIsIHBsdWdpbikKICAgICAgICBzZWxmLmFzc2VydFRydWUoYm90cykKICAgICAgICBib3QgPSBib3RzWzBdCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKGJvdC5fd2VhcG9ucy5nZXQoInJsIikpCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKGJvdC5fd2VhcG9ucy5nZXQoImxnIikpCiAgICAgICAgc2VsZi5hc3NlcnRUcnVlKGJvdC5fd2VhcG9ucy5nZXQoInJnIikpCiAgICAgICAgc2VsZi5hc3NlcnRHcmVhdGVyKGJvdC5fYW1tby5ybCwgMCkKICAgICAgICBzZWxmLmFzc2VydEdyZWF0ZXIoYm90Ll9hbW1vLmxnLCAwKQogICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwoc2VydmVyLmN2YXJzLmdldCgiYm90X2R5bmFtaWNza2lsbCIpLCAiMCIpCiAgICAgICAgc2VsZi5hc3NlcnRFcXVhbChzZXJ2ZXIuY3ZhcnMuZ2V0KCJib3RfYWFzb3B0aW1pemUiKSwgIjEiKQogICAgICAgIHNlbGYuYXNzZXJ0RXF1YWwoc2VydmVyLmN2YXJzLmdldCgiYm90X3JvY2tldGp1bXAiKSwgIjEiKQoKCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICB1bml0dGVzdC5tYWluKCkK'
+          Path('tests/test_live_runtime_regressions.py').write_bytes(base64.b64decode(test_b64))
           PY
 
       - name: Commit repaired runtime
