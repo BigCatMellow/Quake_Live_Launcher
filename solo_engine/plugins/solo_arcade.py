@@ -180,7 +180,9 @@ class solo_arcade(minqlx.Plugin):
         cvars = {
             "sv_hostname": "Quake Live // Solo Engine v5",
             "bot_enable": "1", "bot_thinktime": "0", "bot_challenge": "1",
-            "bot_minplayers": "0", "fraglimit": "0", "timelimit": "0",
+            "bot_aasoptimize": "1", "bot_rocketjump": "1", "bot_nochat": "1",
+            "bot_dynamicskill": "0", "bot_minplayers": "0",
+            "fraglimit": "0", "timelimit": "0",
             "capturelimit": "0", "roundlimit": "0", "scorelimit": "0",
             "g_doWarmup": "0", "g_warmup": "0", "sv_warmupReadyPercentage": "0",
             "g_warmupDelay": "0", "g_friendlyFire": "0", "g_teamForceBalance": "0",
@@ -760,6 +762,12 @@ class solo_arcade(minqlx.Plugin):
     def _handle_human_death(self, victim):
         if self.controller.phase in (Phase.COMPLETE, Phase.FAILED):
             return
+        # Quake Live can emit a death while the joining client is moved onto
+        # RED or while a new objective/map is still PREPARING. That transition
+        # is not a gameplay loss; deaths only count once the objective is live.
+        if self.controller.phase != Phase.ACTIVE:
+            self._log(f"ignored pre-active human death phase={self.controller.phase.value}")
+            return
         self.player_deaths += 1
         if self.mode == "arena_run" and self.run:
             if self.controller.phase == Phase.ACTIVE:
@@ -868,12 +876,28 @@ class solo_arcade(minqlx.Plugin):
     def _apply_bot_loadout(self, player):
         plan = self.current_plan or {}
         try:
+            # Scripted servers disable map weapon/ammo pickups. Give every bot
+            # a combat-ready loadout so its AI can immediately hunt the human
+            # instead of spending the opening of a wave searching for gear.
+            player.health = int(plan.get("health", 100)) if plan else 100
+            player.armor = int(plan.get("armor", 25)) if plan else 25
+            player.weapons(
+                reset=True,
+                g=True, mg=True, sg=True, gl=True,
+                rl=True, lg=True, rg=True, pg=True,
+            )
+            player.ammo(
+                reset=True,
+                mg=160, sg=40, gl=30, rl=40,
+                lg=120, rg=25, pg=120,
+            )
+
             if self.mode in ("arena_run", "boss_rush", "gauntlet_run") and plan:
-                player.health = int(plan.get("health", 100))
-                player.armor = int(plan.get("armor", 0))
                 trial = {"rocket": 5, "lg": 6, "rail": 7, "plasma": 8}.get(plan.get("theme"))
-                if trial: self._give_single_weapon(player, trial)
-                elif plan.get("boss"): self._give_single_weapon(player, 5)
+                if trial:
+                    self._give_single_weapon(player, trial)
+                elif plan.get("boss"):
+                    self._give_single_weapon(player, 5)
         except Exception as exc:
             self._log(f"bot loadout failed: {exc}")
 
