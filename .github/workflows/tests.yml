@@ -5,16 +5,59 @@ on:
   pull_request:
 
 jobs:
-  python:
+  product:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Compile Python
-        run: python -m py_compile plugins/solo_controller.py plugins/solo_core.py plugins/solo_arcade.py plugins/modes/horde.py plugins/modes/gun_game.py
-      - name: Unit tests
+        run: |
+          python -m py_compile launcher.py launcher_gui.py solo_engine/sync_maps.py
+          python - <<'PY'
+          import base64, gzip
+          from pathlib import Path
+          for stem in ('launcher_impl.py.gz','launcher_gui_impl.py.gz'):
+              parts=sorted(Path('.').glob(stem+'.b64part*'))
+              assert parts, stem
+              raw=base64.b64decode(''.join(p.read_text().strip() for p in parts))
+              compile(gzip.decompress(raw), stem[:-3], 'exec')
+              print('OK payload', stem, len(parts), 'parts')
+          PY
+          python -m py_compile solo_engine/plugins/*.py solo_engine/plugins/modes/*.py
+          python -m py_compile tests/*.py
+
+      - name: Unit and fake-minqlx integration tests
         run: python -m unittest discover -s tests -v
-      - name: Shell syntax
-        run: bash -n qlds/start_solo.sh
+
+      - name: Validate shell scripts
+        run: |
+          bash -n install.sh uninstall.sh run.sh
+          for file in solo_engine/*.sh; do bash -n "$file"; done
+
+      - name: Validate resource JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path('resources').glob('*.json'):
+              json.loads(path.read_text())
+              print('OK', path)
+          PY
+
+      - name: Disposable HOME install/uninstall smoke
+        run: |
+          set -euo pipefail
+          TEMP_HOME="$(mktemp -d)"
+          HOME="$TEMP_HOME" bash install.sh
+          test -x "$TEMP_HOME/.local/bin/quake-live-launcher"
+          test -x "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/self_test.sh"
+          test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/plugins/solo_controller.py"
+          test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/plugins/modes/horde.py"
+          mkdir -p "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime"
+          echo preserve > "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime/sentinel"
+          HOME="$TEMP_HOME" bash uninstall.sh
+          test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime/sentinel"
+          test ! -e "$TEMP_HOME/.local/bin/quake-live-launcher"
