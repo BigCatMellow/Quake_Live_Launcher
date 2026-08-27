@@ -47,7 +47,7 @@ jobs:
               print('OK', path)
           PY
 
-      - name: Disposable HOME install/uninstall smoke
+      - name: Disposable HOME install/import/uninstall smoke
         run: |
           set -euo pipefail
           TEMP_HOME="$(mktemp -d)"
@@ -56,8 +56,33 @@ jobs:
           test -x "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/self_test.sh"
           test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/plugins/solo_controller.py"
           test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/plugins/modes/horde.py"
+          HOME="$TEMP_HOME" python - "$TEMP_HOME" <<'PY'
+          import importlib.util,sys
+          from pathlib import Path
+          home=Path(sys.argv[1])
+          path=home/'.local/share/quake-live-launcher/launcher.py'
+          spec=importlib.util.spec_from_file_location('qll_installed_launcher',path)
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert module.APP_VERSION == '5.0-alpha', module.APP_VERSION
+          print('installed launcher import OK:', module.APP_VERSION)
+          PY
           mkdir -p "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime"
           echo preserve > "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime/sentinel"
           HOME="$TEMP_HOME" bash uninstall.sh
           test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime/sentinel"
           test ! -e "$TEMP_HOME/.local/bin/quake-live-launcher"
+
+      - name: Build install archive
+        run: |
+          zip -r -q Quake_Live_Launcher_v5-alpha.zip \
+            launcher.py launcher_gui.py launcher_impl.py.gz.b64part* launcher_gui_impl.py.gz.b64part* \
+            resources solo_engine install.sh uninstall.sh run.sh README.md
+          unzip -t Quake_Live_Launcher_v5-alpha.zip >/dev/null
+
+      - name: Upload install archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Quake_Live_Launcher_v5-alpha
+          path: Quake_Live_Launcher_v5-alpha.zip
+          if-no-files-found: error
