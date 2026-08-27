@@ -32,10 +32,13 @@ jobs:
       - name: Unit and fake-minqlx integration tests
         run: python -m unittest discover -s tests -v
 
-      - name: Validate shell scripts
+      - name: Validate shell scripts and executable modes
         run: |
           bash -n install.sh uninstall.sh run.sh
           for file in solo_engine/*.sh; do bash -n "$file"; done
+          for file in install.sh uninstall.sh run.sh solo_engine/*.sh solo_engine/sync_maps.py; do
+            test -x "$file" || { echo "required executable bit missing: $file"; exit 1; }
+          done
 
       - name: Validate resource JSON
         run: |
@@ -85,7 +88,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib, tempfile, zipfile
+          import hashlib, stat, tempfile, zipfile
 
           archive = Path('Quake_Live_Launcher_v5-alpha.zip')
           roots = [Path('resources'), Path('solo_engine')]
@@ -100,6 +103,10 @@ jobs:
                   p for p in root.rglob('*')
                   if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc'
               )
+          required_executable = {
+              Path('install.sh'), Path('uninstall.sh'), Path('run.sh'),
+              *Path('solo_engine').glob('*.sh'), Path('solo_engine/sync_maps.py'),
+          }
 
           with tempfile.TemporaryDirectory() as td:
               dest = Path(td)
@@ -107,12 +114,15 @@ jobs:
                   names = {Path(name) for name in zf.namelist() if not name.endswith('/')}
                   assert not any('__pycache__' in p.parts or p.suffix == '.pyc' for p in names), names
                   assert names == expected, f'archive file set differs: missing={expected-names}, extra={names-expected}'
+                  for rel in sorted(required_executable):
+                      mode = (zf.getinfo(str(rel)).external_attr >> 16) & 0o777
+                      assert mode & 0o111, f'archive executable bit missing: {rel} mode={oct(mode)}'
                   zf.extractall(dest)
               for rel in sorted(expected):
                   a = hashlib.sha256(rel.read_bytes()).digest()
                   b = hashlib.sha256((dest / rel).read_bytes()).digest()
                   assert a == b, f'archive byte mismatch: {rel}'
-          print('archive/source equality OK:', len(expected), 'files')
+          print('archive/source equality + executable modes OK:', len(expected), 'files')
           PY
 
       - name: Upload install archive
