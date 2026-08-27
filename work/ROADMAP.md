@@ -4,96 +4,109 @@
 
 ## Current reality
 
-- Checked facts: the complete usable launcher exists in the retained v4.11 package; GitHub `main` is documentation-only; `v5-alpha` has the new Solo slice but four deterministic dry-run blockers and incomplete product packaging.
-- Evidence/source paths: `docs/V4_11_AUDIT.md`, `docs/V5_ARCHITECTURE.md`, `docs/V5_DRY_RUN.md`, v4.11 retained source, `plugins/`, `qlds/`, `tests/`.
-- Important assumptions: current shinqlx supports the documented single-player, player/team, hook, weapon/ammo/powerup, and console-command APIs; TDM is a viable hidden enemy-team sandbox.
+- Checked facts: `v5-alpha` now contains the complete installable launcher shell, resources, native Arcade definitions, map recommendation data, rebuilt Solo runtime, setup/self-test tooling, diagnostics, and the full integration test harness. The obsolete root `plugins/` and `qlds/` alpha copies have been removed.
+- Evidence/source paths: `README.md`, `solo_engine/`, `resources/`, `tests/`, `docs/V4_11_AUDIT.md`, `docs/V5_ARCHITECTURE.md`, `docs/V5_DRY_RUN.md`, GitHub Actions run `33088372440` on commit `2fddd52771546e5177557d63b91eaceb307d2d1d`.
+- Verified CI evidence: Python/payload compilation PASS; 40 unit + fake-minqlx lifecycle tests PASS; shell validation PASS; resource JSON validation PASS; disposable-HOME install/uninstall smoke PASS.
+- Important remaining assumption: the real Steam Quake Live Dedicated Server + shinqlx combination behaves consistently with the upstream APIs and the fake-minqlx contract. Generic GitHub CI cannot execute Steam's `qzeroded.x64`; the shipped `solo_engine/self_test.sh` is the target-machine proof for that boundary.
 
 ## Definition of DONE
 
-- Finished result: one installable repo/release containing the complete launcher and a Solo runtime in which every playable card has a verified lifecycle.
-- Final proof: CI integration simulation + package smoke + a local QLDS runtime self-test that requires a plugin readiness handshake.
-- Who can perform/inspect final proof: CI/project agent; runtime self-test is automatic on the target machine and does not require the user to play a match.
+- Finished result: one installable repo/release containing the complete launcher and a Solo runtime in which every visible playable card has a real implementation and verified lifecycle.
+- Final proof:
+  1. full GitHub CI product workflow passes;
+  2. every advertised Solo mode passes lifecycle simulation, including adverse event orderings;
+  3. package/install/uninstall smoke passes;
+  4. installed target runs `solo_engine/self_test.sh`, which launches real QLDS + shinqlx + `solo_arcade` and requires the plugin readiness handshake.
+- Who can perform/inspect final proof: CI/project agent for repository proof; target-machine self-test is automated and does not require manual gameplay.
 
 ## Boundaries
 
 - In scope: launcher shell, native Arcade, 15 Solo modes, map recommendations/sync, movement, setup, diagnostics, packaging.
-- Not doing: public multiplayer server product, new AI/nav engine, destructive user-config edits.
+- Not doing: public multiplayer server product, new AI/navigation engine, destructive user-config edits.
 - Effort limit: change architecture rather than continue patching if a core QLDS/shinqlx contract is disproven.
-- Highest-risk unknown: live QLDS lifecycle behavior that cannot be reproduced in generic CI.
+- Highest-risk unknown: live QLDS/shinqlx runtime behavior outside generic CI.
 
 ## Backward plan
 
-1. Immediately before DONE: release package/install smoke passes, all advertised modes pass lifecycle simulations, and runtime self-test validates QLDS + shinqlx + plugin readiness.
-2. Before that: all mode implementations use the corrected common controller, map transitions are recoverable, movement/config changes are reversible, and diagnostics expose exact failures.
-3. Before that: full v4.11 product shell is restored to the repo and the v5 runtime contract blockers are removed with regression tests.
-4. Current state: UI/product shell and v5 server work exist in separate lines; v5 tests are too idealized and the repo is not installable.
+1. Immediately before DONE: target-machine QLDS self-test passes against the same committed product that passed CI.
+2. Before that: repository is converged, all visible modes pass lifecycle simulation, package smoke passes, and startup health requires a plugin handshake rather than only a listening socket. **VERIFIED.**
+3. Before that: common Solo lifecycle, teams, spawn accounting, map resume, entity handling, movement and failure-state contracts are regression-tested. **VERIFIED.**
+4. Prior state: v4 product shell and v5 server work were separate; integration tests were too idealized. **RESOLVED.**
 
-## Mission meeting
+## Mission meeting outcome
 
-- Required: YES
-- Questions to settle: What is the product boundary? What must be proven without asking the operator to manually play-test? Which engine owns teams, deaths, waves, and map changes? What happens to modes that cannot meet the proof bar?
-- Assumptions accepted/rejected:
-  - ACCEPT: preserve v4.11 launcher/UI/map work rather than rewrite it.
-  - ACCEPT: plugin owns Solo objectives; Quake owns combat/navigation.
-  - ACCEPT: automated local runtime self-test is part of the product because generic CI cannot launch the Steam QLDS stack.
-  - REJECT: UDP-listening alone is server health.
-  - REJECT: FFA is an acceptable multi-bot Horde/Arena sandbox.
-  - REJECT: passing pure tests is enough to label a mode working.
-- Unresolved questions + owner: exact live QLDS behavior -> automated runtime self-test owned by project agent/product; no manual gameplay dependency.
-- Operator decisions needed: none; prior product intent already requires offline single-player modes, movement improvements, recommendations, logging, and the full launcher experience.
-- Roadmap changes: merge the product shell and server rebuild before adding more features; make integration simulation and readiness handshake first-class release gates.
-- First wave selected: QLL-001, QLL-002, QLL-003, QLL-004.
+- Product boundary: one-user Linux launcher for offline/single-player Quake Live against bots.
+- Engine boundary: Quake Live owns physics, navigation and weapon combat; `solo_arcade` owns scripted enemies, objectives, progression, lives, bosses, map-stage transitions and completion.
+- Health boundary: UDP listening is insufficient; plugin readiness JSON is required.
+- Team boundary: scripted combat uses TDM as an invisible sandbox, human RED, scripted enemies BLUE, friendly fire off, score/time limits disabled.
+- Verification boundary: modes that cannot meet the lifecycle proof bar must be fixed or hidden; pure unit tests alone do not qualify a mode as working.
+- Manual gameplay dependency: rejected. The remaining environment-specific proof is an automated installed-runtime self-test.
 
 ## First wave
 
-- [ ] `QLL-001` — Restore the complete v4.11 launcher/product shell into `v5-alpha` without regressing map scanning, recommendations, native Arcade, setup UI, movement options, or diagnostics — Owner: project agent
-- [ ] `QLL-002` — Correct the shared Solo runtime contract: package imports, plugin-ready handshake, one-human training state, red-vs-blue sandbox, objective spawn accounting, safe entity handling, and failure states — Owner: project agent
-- [ ] `QLL-003` — Add a fake-minqlx integration harness that imports the plugin the way minqlx does and executes adverse event orderings — Owner: project agent
-- [ ] `QLL-004` — Prove Horde, Gun Game, and Arena Run end-to-end in the harness, including map transitions, upgrades, player death, stale callbacks, and side-thruster movement commands — Owner: project agent
+- [x] `QLL-001` — Restore the complete launcher/product shell into `v5-alpha` without regressing map scanning, recommendations, native Arcade, setup UI, movement options or diagnostics.
+- [x] `QLL-002` — Correct the shared Solo runtime contract: package imports, plugin-ready handshake, single-player state, red-vs-blue sandbox, spawn accounting, safe entity handling and failure states.
+- [x] `QLL-003` — Add a fake-minqlx integration harness using the runtime-style `minqlx-plugins` package and adverse event orderings.
+- [x] `QLL-004` — Prove Horde, Gun Game and Arena Run end-to-end in the harness, including map transitions, upgrades, player death, early kills and movement.
 
 ## Phase 0 — Foundation
-- [ ] Restore product shell and make repo installable.
-- [ ] Fix common runtime contract and health handshake.
-- [ ] Add realistic integration simulator and fail CI on lifecycle regressions.
+
+- [x] Restore product shell and make repo installable.
+- [x] Fix common runtime contract and plugin health handshake.
+- [x] Separate intended spawn fulfillment from currently living enemy IDs.
+- [x] Replace FFA scripted waves with RED-vs-BLUE TDM sandbox.
+- [x] Add realistic integration simulator and fail CI on lifecycle regressions.
 
 ## Phase 1 — Delivery
-- [ ] Core playable slice: Horde, Gun Game, Arena Run.
-- [ ] Port and verify remaining scripted modes against the same controller contract:
-  - [ ] Boss Rush
-  - [ ] Wipeout Solo
-  - [ ] The Gauntlet
-  - [ ] Last Stand
-  - [ ] One Life
-  - [ ] Bounty Hunt
-  - [ ] Rocket Tag
-  - [ ] Movement Hunter
-  - [ ] Predator
-  - [ ] Accuracy Trial
-  - [ ] Speedrun Combat
-  - [ ] Random Loadout
-- [ ] Keep only runtime-backed Arena upgrades; make every description match real behavior.
-- [ ] Preserve movement profile + ground dodge-hop / air thrust and reversible temporary binds.
-- [ ] Restore Workshop/local PK3 synchronization and map-specific curated pools.
+
+- [x] Horde
+- [x] Gun Game
+- [x] Arena Run
+- [x] Boss Rush
+- [x] Wipeout Solo — now has a real five-round victory state.
+- [x] The Gauntlet — ten-stage terminal state.
+- [x] Last Stand
+- [x] One Life
+- [x] Bounty Hunt
+- [x] Rocket Tag
+- [x] Movement Hunter
+- [x] Predator
+- [x] Accuracy Trial
+- [x] Speedrun Combat
+- [x] Random Loadout
+- [x] Keep only runtime-backed Arena upgrades and make descriptions match actual behavior.
+- [x] Preserve ground dodge-hop / air thrust and reversible temporary binds.
+- [x] Preserve Workshop/local PK3 sync and curated mode/map pools.
 
 ## Phase 2 — Integration and final proof
-- [ ] Add `solo_engine/self_test.sh` to validate installed QLDS, shinqlx, plugin import/init, readiness handshake, and log failure reasons automatically.
-- [ ] Make launcher Solo readiness depend on setup + self-test status rather than a stale READY file alone.
-- [ ] Run full tests, shell/JSON validation, disposable-HOME install/uninstall smoke, and package reconstruction.
-- [ ] Update README from alpha architecture notes to actual install/use/recovery instructions.
-- [ ] Merge only after final proof gates pass; otherwise keep draft and record exact blocker.
+
+- [x] Add `solo_engine/self_test.sh` to launch real QLDS/shinqlx/plugin on a test port and require `plugin_ready.json`.
+- [x] Make normal Solo startup require QLDS process + requested socket + plugin readiness + matching requested mode.
+- [x] Run full tests, shell/JSON validation and disposable-HOME install/uninstall smoke locally.
+- [x] Run the same full-product workflow in GitHub Actions: run `33088372440` PASS.
+- [x] Remove obsolete root alpha runtime copies and obsolete pre-convergence tests.
+- [x] Update README to actual install/use/architecture/recovery behavior.
+- [ ] Target-machine runtime proof: `SET UP / REPAIR SOLO ENGINE` must complete `self_test.sh` and create `SELF_TEST_OK` + `READY`.
+- [ ] Release/merge only after the final target-runtime proof passes; otherwise record the exact blocker and keep PR draft.
 
 ## Checkpoints
 
-- Checkpoint: after common runtime + core-mode integration harness passes.
-- Evidence reviewed: package import test, early-kill spawn test, team ownership test, readiness handshake test, Horde/Gun Game/Arena scenario traces.
-- Decision: CONTINUE if all pass; CHANGE if any upstream API assumption fails.
-- Reason: remaining modes should not be ported onto an unproven lifecycle.
-- Next action: port the other 12 modes using the proven common contract.
-- Re-plan if: TDM/single-player behavior or hook semantics are contradicted by upstream/current runtime evidence.
+### Checkpoint 1 — common lifecycle
 
-- Checkpoint: after all advertised modes pass simulation and package smoke.
-- Evidence reviewed: mode matrix, install smoke, diagnostics, runtime self-test implementation.
-- Decision: CONTINUE to release if no mode is falsely advertised; otherwise CHANGE or CUT SCOPE by disabling the failing mode until fixed.
-- Reason: user-visible honesty is part of DONE.
-- Next action: release/merge.
-- Re-plan if: automated runtime self-test cannot verify plugin initialization on the target stack.
+- Evidence reviewed: package import, early-kill spawning, team ownership, readiness handshake, Horde/Gun Game/Arena traces.
+- Decision: `CONTINUE`.
+- Reason: common lifecycle passed and no upstream API assumption was contradicted by source inspection or simulation.
+
+### Checkpoint 2 — all advertised modes + package smoke
+
+- Evidence reviewed: 15-mode lifecycle matrix, terminal-state tests, movement simulation, shell/JSON validation, install/uninstall smoke.
+- Decision: `CONTINUE`.
+- Reason: all advertised scripted modes now have runtime implementations and simulated terminal behavior; no known falsely advertised mode remains.
+
+### Checkpoint 3 — GitHub full-product CI
+
+- Evidence reviewed: GitHub Actions run `33088372440`, commit `2fddd52771546e5177557d63b91eaceb307d2d1d`.
+- Decision: `CONTINUE` to target-runtime release gate.
+- Reason: every repository-level proof passed on a clean Ubuntu 24.04 runner, including 40 lifecycle/product tests and disposable-HOME packaging smoke.
+- Next action: preserve PR as draft until the installed QLDS/shinqlx self-test passes on the target stack.
+- Re-plan if: self-test cannot initialize real `qzeroded.x64`, shinqlx, or `solo_arcade`, or if the readiness handshake disagrees with the requested mode.
