@@ -1,17 +1,97 @@
 [
-  {"id":"arena_run","title":"Arena Run","tag":"ROGUELITE","description":"Survive rounds, choose 1 of 3 stacking upgrades, discover synergies and defeat bosses.","lengths":[10,20,0]},
-  {"id":"horde","title":"Horde","tag":"SURVIVAL","description":"Increasing waves of bots with changing compositions and elite waves."},
-  {"id":"gun_game","title":"Gun Game","tag":"PROGRESSION","description":"Every kill advances your weapon. Finish the ladder with the Gauntlet."},
-  {"id":"boss_rush","title":"Boss Rush","tag":"BOSSES","description":"Defeat a sequence of 10 increasingly modified bot bosses."},
-  {"id":"wipeout_solo","title":"Wipeout Solo","tag":"SURVIVAL","description":"Clear 5 squads. Bot respawn delays grow after each death; win a round by eliminating the whole squad at once."},
-  {"id":"gauntlet_run","title":"The Gauntlet","tag":"CHALLENGE RUN","description":"Clear 10 seeded stages mixing weapon trials, survival fights, duel-like encounters and bosses."},
-  {"id":"last_stand","title":"Last Stand","tag":"ONE LIFE","description":"Bots keep coming. You do not respawn. Score is kills and survival time."},
-  {"id":"one_life","title":"One Life","tag":"CHALLENGE","description":"Reach 12 kills without dying once."},
-  {"id":"bounty_hunt","title":"Bounty Hunt","tag":"TARGET","description":"Eliminate 8 marked targets while the rest of the enemy squad interferes."},
-  {"id":"rocket_tag","title":"Rocket Tag","tag":"ARCADE","description":"Rocket-only target chase: eliminate 10 marked targets."},
-  {"id":"movement_hunter","title":"Movement Hunter","tag":"MOVEMENT","description":"Survive 90 seconds against armed bots using movement, routes and evasion."},
-  {"id":"predator","title":"Predator","tag":"VAMPIRE","description":"Start fragile; kills restore health. Reach a 25-kill streak before dying."},
-  {"id":"accuracy_trial","title":"Accuracy Trial","tag":"AIM","description":"Clear 20 Lightning Gun kills, then review your final weapon accuracy."},
-  {"id":"speedrun_combat","title":"Speedrun Combat","tag":"TIME ATTACK","description":"Clear 15 kills as fast as possible."},
-  {"id":"random_loadout","title":"Random Loadout","tag":"CHAOS","description":"Reach 20 kills while your curated weapon loadout rerolls every 4 kills and after each death."}
+  {
+    "id": "arena_run",
+    "title": "Arena Run",
+    "tag": "ROGUELITE",
+    "description": "Survive rounds, choose 1 of 3 stacking upgrades, discover synergies and defeat bosses.",
+    "lengths": [
+      10,
+      20,
+      0
+    ]
+  },
+  {
+    "id": "horde",
+    "title": "Horde",
+    "tag": "SURVIVAL",
+    "description": "Increasing waves of bots with changing compositions and elite waves."
+  },
+  {
+    "id": "gun_game",
+    "title": "Gun Game",
+    "tag": "PROGRESSION",
+    "description": "Every kill advances your weapon. Finish the ladder with the Gauntlet."
+  },
+  {
+    "id": "boss_rush",
+    "title": "Boss Rush",
+    "tag": "BOSSES",
+    "description": "Defeat a sequence of 10 increasingly modified bot bosses."
+  },
+  {
+    "id": "wipeout_solo",
+    "title": "Wipeout Solo",
+    "tag": "SURVIVAL",
+    "description": "Clear 5 squads. Bot respawn delays grow after each death; win a round by eliminating the whole squad at once."
+  },
+  {
+    "id": "gauntlet_run",
+    "title": "The Gauntlet",
+    "tag": "CHALLENGE RUN",
+    "description": "Clear 10 seeded stages mixing weapon trials, survival fights, duel-like encounters and bosses."
+  },
+  {
+    "id": "last_stand",
+    "title": "Last Stand",
+    "tag": "ONE LIFE",
+    "description": "Bots keep coming. You do not respawn. Score is kills and survival time."
+  },
+  {
+    "id": "one_life",
+    "title": "One Life",
+    "tag": "CHALLENGE",
+    "description": "Reach 12 kills without dying once."
+  },
+  {
+    "id": "bounty_hunt",
+    "title": "Bounty Hunt",
+    "tag": "TARGET",
+    "description": "Eliminate 8 marked targets while the rest of the enemy squad interferes."
+  },
+  {
+    "id": "rocket_tag",
+    "title": "Rocket Tag",
+    "tag": "ARCADE",
+    "description": "Rocket-only target chase: eliminate 10 marked targets."
+  },
+  {
+    "id": "movement_hunter",
+    "title": "Movement Hunter",
+    "tag": "MOVEMENT",
+    "description": "Survive 90 seconds against armed bots using movement, routes and evasion."
+  },
+  {
+    "id": "predator",
+    "title": "Predator",
+    "tag": "VAMPIRE",
+    "description": "Start fragile; kills restore health. Reach a 25-kill streak before dying."
+  },
+  {
+    "id": "accuracy_trial",
+    "title": "Accuracy Trial",
+    "tag": "AIM",
+    "description": "Clear 20 Lightning Gun kills, then review your final weapon accuracy."
+  },
+  {
+    "id": "speedrun_combat",
+    "title": "Speedrun Combat",
+    "tag": "TIME ATTACK",
+    "description": "Clear 15 kills as fast as possible."
+  },
+  {
+    "id": "random_loadout",
+    "title": "Random Loadout",
+    "tag": "CHAOS",
+    "description": "Reach 20 kills while your curated weapon loadout rerolls every 4 kills and after each death."
+  }
 ]

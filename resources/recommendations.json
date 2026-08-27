@@ -1,8 +1,112 @@
 [
-  {"id":"modern_duel","title":"Modern Pro Duel","mode":"Duel","tag":"A-TIER • 2025–26","subtitle":"250FPS Season 4 map pool","maps":["Aerowalk","Battleforged","Blood Run","Delirium","Furious Heights","Hektik","Lost World","Silence","Sinister"],"source":"250FPS Quake Live League: Season 4","source_url":"https://liquipedia.net/arenafps/250_FPS/QL_League/Season_4"},
-  {"id":"quakecon_duel","title":"QuakeCon Duel","mode":"Duel","tag":"S-TIER • 2016","subtitle":"QuakeCon 2016 championship pool","maps":["Battleforged","Blood Run","Cure","Elder","Furious Heights","Hektik","Sinister"],"source":"QuakeCon 2016: Quake Live Duel","source_url":"https://liquipedia.net/arenafps/QuakeCon/2016/Quake_Live/Duel"},
-  {"id":"pro_tdm","title":"Pro TDM Classics","mode":"Team Deathmatch","tag":"LAN • 2013","subtitle":"Prague TDM LAN tournament pool","maps":["Arcane Citadel","Dreadful Place","Grim Dungeons","Limbus","Purgatory","Terminatria","Tornado"],"source":"Prague TDM LAN","source_url":"https://liquipedia.net/arenafps/Prague_TDM_LAN"},
-  {"id":"quakecon_ctf","title":"QuakeCon CTF","mode":"Capture the Flag","tag":"A-TIER • 2017","subtitle":"4v4 QuakeCon tournament pool","maps":["Infinity","Ironworks","Pillbox","Spider Crossings","Troubled Waters"],"source":"QuakeCon 2017: Quake Live 4v4 CTF","source_url":"https://liquipedia.net/arenafps/QuakeCon/2017/Quake_Live/CTF"},
-  {"id":"quakecon_ffa","title":"QuakeCon FFA","mode":"Free For All","tag":"QUAKECON • 2012","subtitle":"Competitive FFA event pool","maps":["Almost Lost","Asylum","Campgrounds","Cliffside","Devilish","Leviathan","Longest Yard","Quarantine","Retribution","Trinity"],"source":"QuakeCon 2012 Random Draw Free For All","source_url":"https://www.shacknews.com/article/74795/quakecon-2012-tournaments-announced"},
-  {"id":"competitive_ca","title":"Competitive Clan Arena","mode":"Clan Arena","tag":"B-TIER • 2021","subtitle":"Thunderdome 5 competitive pool","maps":["Overkill","17c","Trinity","Drunken","Campgrounds","Asylum"],"source":"Thunderdome 5: 4v4 Clan Arena","source_url":"https://liquipedia.net/arenafps/Thunderdome/5"}
+  {
+    "id": "modern_duel",
+    "title": "Modern Pro Duel",
+    "mode": "Duel",
+    "tag": "A-TIER \u2022 2025\u201326",
+    "subtitle": "250FPS Season 4 map pool",
+    "maps": [
+      "Aerowalk",
+      "Battleforged",
+      "Blood Run",
+      "Delirium",
+      "Furious Heights",
+      "Hektik",
+      "Lost World",
+      "Silence",
+      "Sinister"
+    ],
+    "source": "250FPS Quake Live League: Season 4",
+    "source_url": "https://liquipedia.net/arenafps/250_FPS/QL_League/Season_4"
+  },
+  {
+    "id": "quakecon_duel",
+    "title": "QuakeCon Duel",
+    "mode": "Duel",
+    "tag": "S-TIER \u2022 2016",
+    "subtitle": "QuakeCon 2016 championship pool",
+    "maps": [
+      "Battleforged",
+      "Blood Run",
+      "Cure",
+      "Elder",
+      "Furious Heights",
+      "Hektik",
+      "Sinister"
+    ],
+    "source": "QuakeCon 2016: Quake Live Duel",
+    "source_url": "https://liquipedia.net/arenafps/QuakeCon/2016/Quake_Live/Duel"
+  },
+  {
+    "id": "pro_tdm",
+    "title": "Pro TDM Classics",
+    "mode": "Team Deathmatch",
+    "tag": "LAN \u2022 2013",
+    "subtitle": "Prague TDM LAN tournament pool",
+    "maps": [
+      "Arcane Citadel",
+      "Dreadful Place",
+      "Grim Dungeons",
+      "Limbus",
+      "Purgatory",
+      "Terminatria",
+      "Tornado"
+    ],
+    "source": "Prague TDM LAN",
+    "source_url": "https://liquipedia.net/arenafps/Prague_TDM_LAN"
+  },
+  {
+    "id": "quakecon_ctf",
+    "title": "QuakeCon CTF",
+    "mode": "Capture the Flag",
+    "tag": "A-TIER \u2022 2017",
+    "subtitle": "4v4 QuakeCon tournament pool",
+    "maps": [
+      "Infinity",
+      "Ironworks",
+      "Pillbox",
+      "Spider Crossings",
+      "Troubled Waters"
+    ],
+    "source": "QuakeCon 2017: Quake Live 4v4 CTF",
+    "source_url": "https://liquipedia.net/arenafps/QuakeCon/2017/Quake_Live/CTF"
+  },
+  {
+    "id": "quakecon_ffa",
+    "title": "QuakeCon FFA",
+    "mode": "Free For All",
+    "tag": "QUAKECON \u2022 2012",
+    "subtitle": "Competitive FFA event pool",
+    "maps": [
+      "Almost Lost",
+      "Asylum",
+      "Campgrounds",
+      "Cliffside",
+      "Devilish",
+      "Leviathan",
+      "Longest Yard",
+      "Quarantine",
+      "Retribution",
+      "Trinity"
+    ],
+    "source": "QuakeCon 2012 Random Draw Free For All",
+    "source_url": "https://www.shacknews.com/article/74795/quakecon-2012-tournaments-announced"
+  },
+  {
+    "id": "competitive_ca",
+    "title": "Competitive Clan Arena",
+    "mode": "Clan Arena",
+    "tag": "B-TIER \u2022 2021",
+    "subtitle": "Thunderdome 5 competitive pool",
+    "maps": [
+      "Overkill",
+      "17c",
+      "Trinity",
+      "Drunken",
+      "Campgrounds",
+      "Asylum"
+    ],
+    "source": "Thunderdome 5: 4v4 Clan Arena",
+    "source_url": "https://liquipedia.net/arenafps/Thunderdome/5"
+  }
 ]

@@ -62,6 +62,7 @@ def main():
             except Exception: pass
     links=[]
     for src in candidates(game):
+        # Do not duplicate the QLDS' own packages if game/baseq3 is the same file.
         digest=hashlib.sha1(str(src).encode()).hexdigest()[:10]
         name=f'qll_{digest}_{src.name}'
         dst=target/name

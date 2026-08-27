@@ -2,7 +2,7 @@
 """Pure Arena Run rules for Quake Live Launcher v5.
 
 This module has no minqlx dependency so every roguelite decision can be tested
-without launching Quake Live. Every exposed upgrade has a concrete runtime
+without launching Quake Live.  Every exposed upgrade has a concrete runtime
 consumer in ``solo_arcade.py``.
 """
 from __future__ import annotations

@@ -25,7 +25,7 @@ class PendingMap:
 class SoloController:
     """Pure lifecycle controller for every scripted Solo mode.
 
-    ``fulfilled_spawns`` deliberately differs from ``enemy_ids``. A bot can be
+    ``fulfilled_spawns`` deliberately differs from ``enemy_ids``.  A bot can be
     killed while later members of a staggered wave are still joining; that kill
     must not make the controller wait forever for an impossible number of living
     enemies before entering ACTIVE.
