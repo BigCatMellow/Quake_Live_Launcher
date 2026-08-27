@@ -2,14 +2,14 @@ name: apply live runtime fix
 
 on:
   push:
-    branches: [v5-alpha]
+    branches:
+      - v5-alpha
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, 'fix: live gameplay lifecycle') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,6 +18,10 @@ jobs:
 
       - name: Apply live-runtime repairs and regression tests
         run: |
+          if git log -1 --pretty=%s | grep -q '^fix: live gameplay lifecycle'; then
+            echo "Live runtime fix already applied."
+            exit 0
+          fi
           python - <<'PY'
           import base64
           from pathlib import Path
@@ -41,6 +45,10 @@ jobs:
 
       - name: Commit repaired runtime
         run: |
+          if git diff --quiet -- solo_engine/plugins/solo_arcade.py tests/test_live_runtime_regressions.py; then
+            echo "No runtime changes to commit."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add solo_engine/plugins/solo_arcade.py tests/test_live_runtime_regressions.py
