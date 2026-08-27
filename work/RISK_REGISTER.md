@@ -1,0 +1,14 @@
+# Risk Register
+
+| ID | Risk | Class | Severity | Owner | Mitigation | Trigger / evidence | Rollback or contingency | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| R-001 | QLDS is alive but `solo_arcade` failed to import/init | integration | high | project agent | plugin-ready handshake; startup waits for matching handshake | UDP listens but no ready record / plugin init exception | refuse client launch; surface exact log | OPEN |
+| R-002 | Quake multiplayer lifecycle forfeits/waits with one human | engine lifecycle | high | project agent | `allow_single_player(True)`, training state, no ready-up, automated runtime self-test | forfeit/wait state in log or self-test | change hidden sandbox/factory; do not reintroduce bootstrap bots without proof | OPEN |
+| R-003 | Scripted enemies fight each other | gameplay | high | project agent | hidden team sandbox: human red, enemies blue, friendly fire off | bot-vs-bot death/damage event | reject/ignore unowned/friendly events; fix team assignment | OPEN |
+| R-004 | Early death while bots are still spawning deadlocks objective | state machine | high | project agent | separate spawned-count from alive enemy IDs; adverse-order test | PREPARING after all intended spawn events | fail objective with diagnostic rather than hang | OPEN |
+| R-005 | Delayed respawn/wave callbacks mutate a later objective | concurrency | high | project agent | generation tokens on every delayed mutation | callback generation mismatch | drop stale callback | OPEN |
+| R-006 | Map change loses or duplicates Solo state | lifecycle | high | project agent | pending-map payload + resume on confirmed human spawn + timeout/fallback | wrong map, duplicate wave, unresolved pending map | fallback to safe installed map or FAILED state | OPEN |
+| R-007 | Workshop/custom map exists for client but not QLDS | content sync | medium | project agent | deterministic PK3 symlink sync + manifest + map availability checks | QLDS cannot load chosen map | choose verified fallback map and log it | OPEN |
+| R-008 | Movement temporary binds persist after Solo session | user config | medium | project agent | save/restore original strafe binds + watchdog/recovery action | Quake exits/crashes before normal restore | explicit restore button/startup recovery | OPEN |
+| R-009 | Mode card/upgrade describes behavior not actually implemented | product integrity | high | project agent | runtime-backed mode/upgrade registry and scenario tests | UI/resource item lacks consumer/test | hide/remove until implemented | OPEN |
+| R-010 | Generic CI cannot prove the Steam QLDS runtime | verification | high | project agent | ship automated local runtime self-test; CI proves everything around it | no Steam runtime in CI | release remains candidate until self-test passes on installed target | OPEN |
