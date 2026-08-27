@@ -29,4 +29,4 @@ Any state may transition to FAILED.
 
 ## v5-alpha scope
 
-Horde and Gun Game are the first live integration targets. Arena Run is next after this controller survives real QLDS testing.
+Horde, Gun Game, and Arena Run are the first live integration targets. Arena Run uses the same controller and resumes map transitions from `player_loaded` rather than fixed timers. The alpha upgrade pool is intentionally limited to effects with concrete runtime consumers.
