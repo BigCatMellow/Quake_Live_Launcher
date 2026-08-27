@@ -5,10 +5,11 @@
 ## Current reality
 
 - Checked facts: `v5-alpha` contains the complete installable launcher shell, resources, native Arcade definitions, map recommendation data, rebuilt Solo runtime, setup/self-test tooling, diagnostics, and the full integration test harness. The obsolete root `plugins/` and `qlds/` alpha copies and the temporary source-sync payload are removed.
-- Evidence/source paths: `README.md`, `solo_engine/`, `resources/`, `tests/`, `docs/V4_11_AUDIT.md`, `docs/V5_ARCHITECTURE.md`, `docs/V5_DRY_RUN.md`, GitHub Actions run `33097341115` on commit `71b48e12bcefb757e5aca0e9ac61985ddd3c9676`.
-- Verified CI evidence: Python/payload compilation PASS; 40 unit + fake-minqlx lifecycle tests PASS; shell validation PASS; resource JSON validation PASS; disposable-HOME install/import/uninstall smoke PASS; install archive build PASS; archive/source file-set and byte equality PASS.
-- Release-candidate artifact: GitHub Actions artifact `9656920360`; inner install ZIP SHA-256 `6ea946f1c84998afeb316d8ff6923b1c5519fec91d7259e8442db26be58029b1`; 35 shipped files; no `.pyc` or `__pycache__`; ZIP integrity PASS. Independent inspection confirmed all nine corrected shipped files match the recovered candidate Git blob hashes.
-- Important remaining assumption: the real Steam Quake Live Dedicated Server + shinqlx combination behaves consistently with the upstream APIs and the fake-minqlx contract. Generic GitHub CI cannot execute Steam's `qzeroded.x64`; the shipped `solo_engine/self_test.sh` is the target-machine proof for that boundary.
+- Evidence/source paths: `README.md`, `solo_engine/`, `resources/`, `tests/`, `docs/V4_11_AUDIT.md`, `docs/V5_ARCHITECTURE.md`, `docs/V5_DRY_RUN.md`, GitHub Actions run `33098529664` on commit `e10f1ad4979017af8a657c3e94bf37e8df94f111`.
+- Verified CI evidence: Python/payload compilation PASS; 40 unit + fake-minqlx lifecycle tests PASS; shell validation PASS; required source executable modes PASS; resource JSON validation PASS; disposable-HOME install/import/uninstall smoke PASS; install archive build PASS; archive/source file-set and byte equality PASS; archive executable-mode validation PASS.
+- Release-candidate artifact: GitHub Actions artifact `9657404786`; wrapper SHA-256 `e9bca1e0cceb83bce9bce3cec229faa9578b07b073056e4a119a5678b6715e0f`; inner install ZIP SHA-256 `03e42829f9ace83d9bca754cf7f6c1991ac01b4bb6797983493d21e067101cc0`; 35 shipped files; no `.pyc` or `__pycache__`; ZIP integrity PASS; all required shell/runtime entries carry executable mode.
+- Upstream contract audit: current shinqlx source imports plugins as `<plugins-directory>.<plugin>` and its own tests use a hyphenated plugin package directory, matching `minqlx-plugins.solo_arcade`; current `allow_single_player`, hook signatures, `Plugin` helpers, and Player mutation APIs match the runtime calls used by `solo_arcade`; the established minqlx bot convention uses `steam_id > 90000000000000000`, matching this project.
+- Important remaining assumption: the real Steam Quake Live Dedicated Server + shinqlx combination behaves consistently with those upstream APIs and the fake-minqlx contract. Generic GitHub CI cannot execute Steam's `qzeroded.x64`; the shipped `solo_engine/self_test.sh` is the target-machine proof for that boundary.
 
 ## Definition of DONE
 
@@ -17,7 +18,7 @@
   1. full GitHub CI product workflow passes;
   2. every advertised Solo mode passes lifecycle simulation, including adverse event orderings;
   3. package/install/import/uninstall smoke passes;
-  4. CI-built release candidate is byte-equal to the shipped repository source and contains no cache bytecode;
+  4. CI-built release candidate is byte-equal to the shipped repository source, contains no cache bytecode, and preserves required Unix executable modes;
   5. installed target runs `solo_engine/self_test.sh`, which launches real QLDS + shinqlx + `solo_arcade` and requires the plugin readiness handshake.
 - Who can perform/inspect final proof: CI/project agent for repository/package proof; target-machine self-test is automated and does not require manual gameplay.
 
@@ -31,8 +32,8 @@
 ## Backward plan
 
 1. Immediately before DONE: target-machine QLDS self-test passes against the same committed product that passed CI and produced the verified release-candidate ZIP.
-2. Before that: repository, shipped source, and CI-built package are converged byte-for-byte; all visible modes pass lifecycle simulation; package smoke passes; startup health requires a plugin handshake rather than only a listening socket. **VERIFIED.**
-3. Before that: common Solo lifecycle, teams, spawn accounting, map resume, entity handling, movement and failure-state contracts are regression-tested. **VERIFIED.**
+2. Before that: repository, shipped source, and CI-built package are converged byte-for-byte and by required executable modes; all visible modes pass lifecycle simulation; package smoke passes; startup health requires a plugin handshake rather than only a listening socket. **VERIFIED.**
+3. Before that: common Solo lifecycle, teams, spawn accounting, map resume, entity handling, movement and failure-state contracts are regression-tested and checked against current upstream shinqlx API signatures. **VERIFIED.**
 4. Prior state: v4 product shell and v5 server work were separate; integration tests were too idealized. **RESOLVED.**
 
 ## Mission meeting outcome
@@ -85,10 +86,12 @@
 - [x] Add `solo_engine/self_test.sh` to launch real QLDS/shinqlx/plugin on a test port and require `plugin_ready.json`.
 - [x] Make normal Solo startup require QLDS process + requested socket + plugin readiness + matching requested mode.
 - [x] Run full tests, shell/JSON validation and disposable-HOME install/uninstall smoke locally.
-- [x] Run the full-product workflow in GitHub Actions on the converged source: run `33097341115` PASS at `71b48e12bcefb757e5aca0e9ac61985ddd3c9676`.
+- [x] Run the full-product workflow in GitHub Actions on the converged source: run `33098529664` PASS at `e10f1ad4979017af8a657c3e94bf37e8df94f111`.
 - [x] Remove obsolete root alpha runtime copies, obsolete pre-convergence tests and temporary source-sync payload.
 - [x] Verify the CI-built install archive equals the shipped source byte-for-byte and excludes `.pyc`/`__pycache__`.
-- [x] Independently inspect the produced artifact and record install ZIP SHA-256 `6ea946f1c84998afeb316d8ff6923b1c5519fec91d7259e8442db26be58029b1`.
+- [x] Preserve and assert Unix executable modes for all directly executed shell/runtime files in source and CI archive.
+- [x] Independently inspect artifact `9657404786` and record install ZIP SHA-256 `03e42829f9ace83d9bca754cf7f6c1991ac01b4bb6797983493d21e067101cc0`.
+- [x] Audit current shinqlx plugin loading, hook signatures, Player/Plugin APIs, single-player API, and bot-ID convention against the runtime assumptions used by the project.
 - [x] Update README to actual install/use/architecture/recovery behavior.
 - [ ] Target-machine runtime proof: `SET UP / REPAIR SOLO ENGINE` must complete `self_test.sh` and create `SELF_TEST_OK` + `READY`.
 - [ ] Release/merge only after the final target-runtime proof passes; otherwise record the exact blocker and keep PR draft.
@@ -109,14 +112,14 @@
 
 ### Checkpoint 3 — converged GitHub full-product CI
 
-- Evidence reviewed: GitHub Actions run `33097341115`, commit `71b48e12bcefb757e5aca0e9ac61985ddd3c9676`.
+- Evidence reviewed: GitHub Actions run `33098529664`, commit `e10f1ad4979017af8a657c3e94bf37e8df94f111`.
 - Decision: `CONTINUE`.
-- Reason: every repository-level proof passed on a clean Ubuntu runner, including 40 lifecycle/product tests, disposable-HOME install/import/uninstall smoke, package construction and archive/source equality.
+- Reason: every repository-level proof passed on a clean Ubuntu runner, including 40 lifecycle/product tests, disposable-HOME install/import/uninstall smoke, package construction, archive/source equality, and required executable-mode assertions.
 
-### Checkpoint 4 — release-candidate package equality
+### Checkpoint 4 — release-candidate package equality and Unix modes
 
-- Evidence reviewed: artifact `9656920360`; install ZIP SHA-256 `6ea946f1c84998afeb316d8ff6923b1c5519fec91d7259e8442db26be58029b1`; independent ZIP integrity/cache/hash inspection.
+- Evidence reviewed: artifact `9657404786`; wrapper SHA-256 `e9bca1e0cceb83bce9bce3cec229faa9578b07b073056e4a119a5678b6715e0f`; install ZIP SHA-256 `03e42829f9ace83d9bca754cf7f6c1991ac01b4bb6797983493d21e067101cc0`; independent ZIP integrity/cache/hash/mode inspection.
 - Decision: `CONTINUE` to target-runtime release gate.
-- Reason: the candidate distributed from CI is now demonstrably the same shipped source that passed CI; the prior source/package mismatch is resolved.
+- Reason: the candidate distributed from CI is the same shipped source that passed CI, contains no bytecode caches, and now preserves executable modes for every directly executed runtime script. The prior source/package and mode issues are resolved.
 - Next action: preserve PR as draft until the installed QLDS/shinqlx self-test passes on the target stack.
 - Re-plan if: self-test cannot initialize real `qzeroded.x64`, shinqlx, or `solo_arcade`, or if the readiness handshake disagrees with the requested mode.
