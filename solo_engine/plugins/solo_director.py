@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import math
 import random
 from typing import Iterable, Mapping, Optional
@@ -193,8 +193,6 @@ class SoloDirector:
             return str(special)
         roles = self.profile.roles or ("skirmisher",)
         rng = random.Random(self.seed + self.objective_serial * 1009 + int(spawn_index) * 9176)
-        # Use deterministic jitter rather than a fixed repeating sequence so
-        # seeded runs are reproducible without every wave looking identical.
         base_index = int(spawn_index) % len(roles)
         jitter = rng.randrange(len(roles)) if len(roles) > 1 else 0
         return roles[(base_index + jitter) % len(roles)]
@@ -235,7 +233,6 @@ class SoloDirector:
         self._trim(now)
 
     def note_human_kill(self, now: float) -> None:
-        # A kill is meaningful contact even if a damage event was not available.
         self.damage_dealt.append((float(now), 30.0))
         self._trim(float(now))
 
@@ -328,9 +325,6 @@ class SoloDirector:
         if not active:
             return snapshot, actions
 
-        # A large damage burst or critically low stack earns a short recovery
-        # window. We hold future reinforcement; enemies already fighting remain
-        # untouched so the adaptation is not visible mid-shot.
         if recent_taken >= 70.0 or int(player_health) + int(player_armor) <= 45:
             new_hold = now + self.profile.recovery_floor
             if new_hold > self.hold_until + 0.25:
@@ -352,7 +346,11 @@ class SoloDirector:
                 too_far = track.distance is not None and track.distance >= self.profile.far_distance
                 idle_long = contact_age >= self.profile.idle_timeout
                 cooled_down = now - track.last_recovery >= self.profile.recovery_cooldown
-                if cooled_down and (too_far or idle_long):
+                # Distance alone never overrides fresh combat evidence. A bot
+                # that just dealt/took damage is contributing even if it is
+                # currently across the map, so leave native AI in control.
+                recent_contact = contact_age <= 3.0
+                if cooled_down and not recent_contact and (too_far or idle_long):
                     distance_score = (track.distance or 0.0) / max(1.0, self.profile.far_distance)
                     candidates.append((contact_age + distance_score * 2.0, cid, track))
             if candidates:
