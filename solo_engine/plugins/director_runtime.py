@@ -196,7 +196,6 @@ class DirectorRuntime:
         """Apply a role loadout; authored mode contracts still override it."""
         try:
             plan = plan or {}
-            # Rocket Tag is a hard gameplay contract, not a Director preference.
             if self.plugin.mode == "rocket_tag":
                 self.plugin._give_single_weapon(player, 5)
                 return True
@@ -270,8 +269,15 @@ class DirectorRuntime:
             self._write_action_event("evaluation", **evaluation)
             self.plugin._log(
                 f"DIRECTOR evaluation={evaluation['kind']} success={evaluation['success']} "
-                f"pressure={evaluation['pressure_before']:.0f}->{evaluation['pressure_after']:.0f}"
+                f"pressure={evaluation['pressure_before']:.0f}->{evaluation['pressure_after']:.0f} "
+                f"live_bias={evaluation.get('live_pressure_bias', 0.0):+.1f}"
             )
+        if evaluations:
+            # Apply the learner's bounded live correction immediately. This is
+            # the feedback-loop boundary: a move can change the Director's
+            # subsequent pressure target during this same encounter, without
+            # touching bot aim, damage, physics, or authored mode contracts.
+            self._refresh_learned_profile()
         for action in actions:
             self._execute(action, snapshot, roles, now)
         return snapshot, actions
