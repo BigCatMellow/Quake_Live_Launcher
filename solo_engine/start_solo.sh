@@ -62,7 +62,7 @@ log "Synchronizing Solo plugin package"
 rm -rf "$QLDS/minqlx-plugins"
 mkdir -p "$QLDS/minqlx-plugins"
 run_logged cp "$SOURCE_DIR/plugins/__init__.py" "$QLDS/minqlx-plugins/__init__.py" || fail 10 "Could not copy plugin package __init__.py"
-for file in solo_arcade.py solo_controller.py solo_core.py; do
+for file in solo_arcade.py solo_directed.py solo_director.py solo_controller.py solo_core.py; do
   run_logged cp "$SOURCE_DIR/plugins/$file" "$QLDS/minqlx-plugins/$file" || fail 10 "Could not copy $file"
 done
 mkdir -p "$QLDS/minqlx-plugins/modes"
@@ -104,7 +104,7 @@ if command -v ldd >/dev/null 2>&1; then
   ldd "$SHINQLX_LIB" >>"$LOG" 2>&1 || true
 fi
 
-log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox"
+log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox + encounter Director"
 (
   cd "$QLDS" || exit 91
   export VIRTUAL_ENV="$VENV"
@@ -119,7 +119,7 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox"
     +set net_port "$PORT" \
     +set sv_pure 0 \
     +set qlx_pluginsPath "$QLDS/minqlx-plugins" \
-    +set qlx_plugins solo_arcade \
+    +set qlx_plugins solo_directed \
     +set qlx_soloMode "$MODE" \
     +set zmq_stats_enable 1 \
     +set zmq_stats_port "$PORT" \
@@ -130,6 +130,7 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox"
     +set g_friendlyFire 0 \
     +set g_teamForceBalance 0 \
     +exec server.cfg \
+    +set qlx_plugins solo_directed \
     +map "$MAP" tdm
 ) >>"$LOG" 2>&1 &
 pid=$!
@@ -173,7 +174,7 @@ PY
   fi
 
   if [ "$plugin_ok" -eq 1 ] && [ "$socket_ok" -eq 1 ]; then
-    log "HEALTH OK: PID alive, plugin handshake verified for $MODE, game socket $PORT available"
+    log "HEALTH OK: PID alive, Director plugin handshake verified for $MODE, game socket $PORT available"
     log "---- Solo Engine startup successful ----"
     exit 0
   fi
