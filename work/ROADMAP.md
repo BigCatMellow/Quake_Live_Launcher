@@ -1,125 +1,267 @@
 # Roadmap: Quake Live Launcher v5
 
 - State: WORKING
+- Current MAPS decision: CHANGE, then CONTINUE
+- Center of gravity: a one-player Quake Live launcher where every visible mode reliably starts, plays, ends correctly, and uses bots that create fun, mode-appropriate pressure without cheating.
 
 ## Current reality
 
-- Checked facts: `v5-alpha` contains the complete installable launcher shell, resources, native Arcade definitions, map recommendation data, rebuilt Solo runtime, setup/self-test tooling, diagnostics, and the full integration test harness. The obsolete root `plugins/` and `qlds/` alpha copies and the temporary source-sync payload are removed.
-- Evidence/source paths: `README.md`, `solo_engine/`, `resources/`, `tests/`, `docs/V4_11_AUDIT.md`, `docs/V5_ARCHITECTURE.md`, `docs/V5_DRY_RUN.md`, GitHub Actions run `33098529664` on commit `e10f1ad4979017af8a657c3e94bf37e8df94f111`.
-- Verified CI evidence: Python/payload compilation PASS; 40 unit + fake-minqlx lifecycle tests PASS; shell validation PASS; required source executable modes PASS; resource JSON validation PASS; disposable-HOME install/import/uninstall smoke PASS; install archive build PASS; archive/source file-set and byte equality PASS; archive executable-mode validation PASS.
-- Release-candidate artifact: GitHub Actions artifact `9657404786`; wrapper SHA-256 `e9bca1e0cceb83bce9bce3cec229faa9578b07b073056e4a119a5678b6715e0f`; inner install ZIP SHA-256 `03e42829f9ace83d9bca754cf7f6c1991ac01b4bb6797983493d21e067101cc0`; 35 shipped files; no `.pyc` or `__pycache__`; ZIP integrity PASS; all required shell/runtime entries carry executable mode.
-- Upstream contract audit: current shinqlx source imports plugins as `<plugins-directory>.<plugin>` and its own tests use a hyphenated plugin package directory, matching `minqlx-plugins.solo_arcade`; current `allow_single_player`, hook signatures, `Plugin` helpers, and Player mutation APIs match the runtime calls used by `solo_arcade`; the established minqlx bot convention uses `steam_id > 90000000000000000`, matching this project.
-- Important remaining assumption: the real Steam Quake Live Dedicated Server + shinqlx combination behaves consistently with those upstream APIs and the fake-minqlx contract. Generic GitHub CI cannot execute Steam's `qzeroded.x64`; the shipped `solo_engine/self_test.sh` is the target-machine proof for that boundary.
+- `v5-alpha` is a complete installable launcher with native Arcade, 15 scripted Solo modes, map scanning/sync, movement, setup, diagnostics and CI packaging.
+- Repository/package proof is strong: compile, shell/JSON validation, install/import/uninstall smoke and archive/source equality pass in GitHub Actions.
+- Real Linux Mint + QLDS + shinqlx execution is now proven far enough to launch and play scripted combat.
+- Real gameplay disproved the previous assumption that plugin readiness/self-test was sufficient final proof:
+  - Horde launched and was fightable, but bots felt too passive/disinterested.
+  - multiple other scripted modes appeared to end immediately after starting.
+- The first live repair is committed: pre-ACTIVE human deaths are ignored, scripted bots receive real combat loadouts, and bot AI cvars are tightened. Clean GitHub Actions run `33126587095` passes 57 tests, including regressions for both observed live symptoms.
+- The live repair still requires target-machine confirmation.
+- A new Director subsystem is now part of the product plan. Design authority: `docs/DIRECTOR_DESIGN.md`.
 
 ## Definition of DONE
 
-- Finished result: one installable repo/release containing the complete launcher and a Solo runtime in which every visible playable card has a real implementation and verified lifecycle.
-- Final proof:
-  1. full GitHub CI product workflow passes;
-  2. every advertised Solo mode passes lifecycle simulation, including adverse event orderings;
-  3. package/install/import/uninstall smoke passes;
-  4. CI-built release candidate is byte-equal to the shipped repository source, contains no cache bytecode, and preserves required Unix executable modes;
-  5. installed target runs `solo_engine/self_test.sh`, which launches real QLDS + shinqlx + `solo_arcade` and requires the plugin readiness handshake.
-- Who can perform/inspect final proof: CI/project agent for repository/package proof; target-machine self-test is automated and does not require manual gameplay.
+A v5 release is DONE only when all of the following are true:
 
-## Boundaries
+1. Fresh checkout/install succeeds on the target Linux family without requiring admin access for normal use.
+2. Quick Play, Arcade, Solo and Custom Match remain intact.
+3. Every visible scripted Solo mode reliably starts, reaches gameplay, progresses and reaches its intended terminal/failure state.
+4. No mode can end because of a joining/team-transition death before gameplay becomes ACTIVE.
+5. QLDS process + socket + shinqlx/plugin readiness are verified before client launch.
+6. Repository/package CI passes compile, lifecycle simulation, install smoke, archive/source equality and executable-mode checks.
+7. Real target-machine gameplay validates representative mode families; automated self-test alone is not sufficient.
+8. Every scripted Solo mode has an explicit Director profile or a documented neutral profile.
+9. Director difficulty is expressed primarily through encounter composition, pressure, engagement timing and recovery—not hidden aim/damage cheating.
+10. Bots do not spend material portions of an active objective wandering, searching for disabled pickups, or failing to contribute without the Director detecting/recovering them.
+11. Easy/Normal/Hard/Nightmare remain recognizably different while obeying the Director fairness laws in `docs/DIRECTOR_DESIGN.md`.
+12. Diagnostics can explain Director interventions and the reason for them.
+13. PR #1 remains draft until the target gameplay gates pass; merge/release happens only after the evidence supports DONE.
 
-- In scope: launcher shell, native Arcade, 15 Solo modes, map recommendations/sync, movement, setup, diagnostics, packaging.
-- Not doing: public multiplayer server product, new AI/navigation engine, destructive user-config edits.
-- Effort limit: change architecture rather than continue patching if a core QLDS/shinqlx contract is disproven.
-- Highest-risk unknown: live QLDS/shinqlx runtime behavior outside generic CI.
+## Product boundaries
 
-## Backward plan
+### In scope
 
-1. Immediately before DONE: target-machine QLDS self-test passes against the same committed product that passed CI and produced the verified release-candidate ZIP.
-2. Before that: repository, shipped source, and CI-built package are converged byte-for-byte and by required executable modes; all visible modes pass lifecycle simulation; package smoke passes; startup health requires a plugin handshake rather than only a listening socket. **VERIFIED.**
-3. Before that: common Solo lifecycle, teams, spawn accounting, map resume, entity handling, movement and failure-state contracts are regression-tested and checked against current upstream shinqlx API signatures. **VERIFIED.**
-4. Prior state: v4 product shell and v5 server work were separate; integration tests were too idealized. **RESOLVED.**
+- Linux-first one-human Quake Live launcher.
+- Native Arcade modes.
+- 15 scripted Solo modes.
+- Mode-specific bot encounters managed by a common Director.
+- Map recommendations/sync, movement, setup, diagnostics and packaging.
 
-## Mission meeting outcome
+### Not doing
 
-- Product boundary: one-user Linux launcher for offline/single-player Quake Live against bots.
-- Engine boundary: Quake Live owns physics, navigation and weapon combat; `solo_arcade` owns scripted enemies, objectives, progression, lives, bosses, map-stage transitions and completion.
-- Health boundary: UDP listening is insufficient; plugin readiness JSON is required.
-- Team boundary: scripted combat uses TDM as an invisible sandbox, human RED, scripted enemies BLUE, friendly fire off, score/time limits disabled.
-- Verification boundary: modes that cannot meet the lifecycle proof bar must be fixed or hidden; pure unit tests alone do not qualify a mode as working.
-- Manual gameplay dependency: rejected. The remaining environment-specific proof is an automated installed-runtime self-test.
+- Public multiplayer matchmaking/server administration.
+- Replacing Quake Live navigation, aiming or shooting with a custom AI engine.
+- Direct Director control of bot aim/fire.
+- Hidden difficulty cheats that invalidate player skill.
+- Destructive user configuration changes.
 
-## First wave
+### Engine ownership
 
-- [x] `QLL-001` — Restore the complete launcher/product shell into `v5-alpha` without regressing map scanning, recommendations, native Arcade, setup UI, movement options or diagnostics.
-- [x] `QLL-002` — Correct the shared Solo runtime contract: package imports, plugin-ready handshake, single-player state, red-vs-blue sandbox, spawn accounting, safe entity handling and failure states.
-- [x] `QLL-003` — Add a fake-minqlx integration harness using the runtime-style `minqlx-plugins` package and adverse event orderings.
-- [x] `QLL-004` — Prove Horde, Gun Game and Arena Run end-to-end in the harness, including map transitions, upgrades, player death, early kills and movement.
+- Quake Live owns physics, navigation, aiming, shooting, weapons and collision.
+- `solo_controller` owns objective lifecycle and enemy ownership.
+- `solo_arcade` adapts Quake events to the mode runtime.
+- The Director observes and recommends bounded encounter actions; it **does not become a second lifecycle state machine**.
 
-## Phase 0 — Foundation
+## Mission meeting outcome — Director
 
-- [x] Restore product shell and make repo installable.
-- [x] Fix common runtime contract and plugin health handshake.
-- [x] Separate intended spawn fulfillment from currently living enemy IDs.
-- [x] Replace FFA scripted waves with RED-vs-BLUE TDM sandbox.
-- [x] Add realistic integration simulator and fail CI on lifecycle regressions.
+The intended mental model is: **the Director is playing the opposing pieces against the human.**
 
-## Phase 1 — Delivery
+It may decide:
 
-- [x] Horde
-- [x] Gun Game
-- [x] Arena Run
-- [x] Boss Rush
-- [x] Wipeout Solo — now has a real five-round victory state.
-- [x] The Gauntlet — ten-stage terminal state.
-- [x] Last Stand
-- [x] One Life
-- [x] Bounty Hunt
-- [x] Rocket Tag
-- [x] Movement Hunter
-- [x] Predator
-- [x] Accuracy Trial
-- [x] Speedrun Combat
-- [x] Random Loadout
-- [x] Keep only runtime-backed Arena upgrades and make descriptions match actual behavior.
-- [x] Preserve ground dodge-hop / air thrust and reversible temporary binds.
-- [x] Preserve Workshop/local PK3 sync and curated mode/map pools.
+- which bot roles make up an encounter;
+- when replacements arrive;
+- how many enemies should meaningfully pressure at once;
+- what combat loadout a role receives;
+- whether a bot is idle/non-contributing and needs recovery;
+- when a player should receive a brief recovery window;
+- how pressure should rise as a mode progresses;
+- how each difficulty preset changes encounter pressure.
 
-## Phase 2 — Integration and final proof
+It may not:
 
-- [x] Add `solo_engine/self_test.sh` to launch real QLDS/shinqlx/plugin on a test port and require `plugin_ready.json`.
-- [x] Make normal Solo startup require QLDS process + requested socket + plugin readiness + matching requested mode.
-- [x] Run full tests, shell/JSON validation and disposable-HOME install/uninstall smoke locally.
-- [x] Run the full-product workflow in GitHub Actions on the converged source: run `33098529664` PASS at `e10f1ad4979017af8a657c3e94bf37e8df94f111`.
-- [x] Remove obsolete root alpha runtime copies, obsolete pre-convergence tests and temporary source-sync payload.
-- [x] Verify the CI-built install archive equals the shipped source byte-for-byte and excludes `.pyc`/`__pycache__`.
-- [x] Preserve and assert Unix executable modes for all directly executed shell/runtime files in source and CI archive.
-- [x] Independently inspect artifact `9657404786` and record install ZIP SHA-256 `03e42829f9ace83d9bca754cf7f6c1991ac01b4bb6797983493d21e067101cc0`.
-- [x] Audit current shinqlx plugin loading, hook signatures, Player/Plugin APIs, single-player API, and bot-ID convention against the runtime assumptions used by the project.
-- [x] Update README to actual install/use/architecture/recovery behavior.
-- [ ] Target-machine runtime proof: `SET UP / REPAIR SOLO ENGINE` must complete `self_test.sh` and create `SELF_TEST_OK` + `READY`.
-- [ ] Release/merge only after the final target-runtime proof passes; otherwise record the exact blocker and keep PR draft.
+- aim or shoot for a bot;
+- grant impossible reactions;
+- teleport a hostile bot directly into unavoidable danger;
+- silently multiply damage because the player is doing well;
+- hard-counter every successful player weapon/build;
+- increase every difficulty axis at once.
 
-## Checkpoints
+Difficulty priority:
 
-### Checkpoint 1 — common lifecycle
+1. encounter quality;
+2. pacing;
+3. useful proximity;
+4. role composition;
+5. simultaneous pressure;
+6. native bot skill/health/armor only within explicit caps.
 
-- Evidence reviewed: package import, early-kill spawning, team ownership, readiness handshake, Horde/Gun Game/Arena traces.
-- Decision: `CONTINUE`.
-- Reason: common lifecycle passed and no upstream API assumption was contradicted by source inspection or simulation.
+## Backward plan from DONE
 
-### Checkpoint 2 — all advertised modes + package smoke
+1. Immediately before release: representative live mode families pass target gameplay quality gates and no open high-severity Director/lifecycle risk remains.
+2. Before that: all 15 Director profiles pass simulation and fairness-law tests; difficulty presets operate through pressure bands.
+3. Before that: common Director pressure budget, telemetry, idle recovery, roles and recovery windows are proven in Horde/Gun Game/Speedrun.
+4. Before that: the current live lifecycle repair is confirmed on Mint and all visible modes stop falsely terminating at startup.
+5. Before that: repository/package/runtime bootstrap remains green and reproducible. **VERIFIED.**
 
-- Evidence reviewed: 15-mode lifecycle matrix, terminal-state tests, movement simulation, shell/JSON validation, install/uninstall smoke.
-- Decision: `CONTINUE`.
-- Reason: all advertised scripted modes now have runtime implementations and simulated terminal behavior; no known falsely advertised mode remains.
+## Immediate wave — stabilize live gameplay
 
-### Checkpoint 3 — converged GitHub full-product CI
+- [x] `QLL-LIVE-001` — Capture first real target-machine result: QLDS/shinqlx launches; Horde plays; other modes can terminate immediately; Horde AI feels passive.
+- [x] `QLL-LIVE-002` — Ignore human death events before objective phase ACTIVE.
+- [x] `QLL-LIVE-003` — Give every scripted bot a combat-ready loadout when map pickups are disabled.
+- [x] `QLL-LIVE-004` — Add regression tests for startup-death and Horde combat-readiness symptoms; clean CI run `33126587095` PASS with 57 tests.
+- [ ] `QLL-LIVE-005` — Confirm on target Mint that Boss Rush/Wipeout/One Life/Arena no longer terminate at startup.
+- [ ] `QLL-LIVE-006` — Confirm Horde bots now engage materially better; record remaining passivity as Director telemetry requirements rather than ad-hoc AI cvar tweaks.
 
-- Evidence reviewed: GitHub Actions run `33098529664`, commit `e10f1ad4979017af8a657c3e94bf37e8df94f111`.
-- Decision: `CONTINUE`.
-- Reason: every repository-level proof passed on a clean Ubuntu runner, including 40 lifecycle/product tests, disposable-HOME install/import/uninstall smoke, package construction, archive/source equality, and required executable-mode assertions.
+## Director first wave
 
-### Checkpoint 4 — release-candidate package equality and Unix modes
+- [ ] `QLL-D001` — Add observation-only Director telemetry; no gameplay changes.
+- [ ] `QLL-D002` — Add deterministic pressure model and diagnostics: meaningful-combat gaps, engaged estimate, player damage state, bot contribution/idle time.
+- [ ] `QLL-D003` — Add idle/non-contributing recovery for Horde, Gun Game and Speedrun Combat.
+- [ ] `QLL-D004` — Add role/loadout system: Chaser, Gunner, Marksman, Bruiser, Skirmisher, Berserker, Target/Boss.
+- [ ] `QLL-D005` — Add pressure-budget pacing and recovery windows with fairness-law tests.
+- [ ] `QLL-D006` — Convert difficulty presets from mostly skill/intensity values into pressure-band profiles.
 
-- Evidence reviewed: artifact `9657404786`; wrapper SHA-256 `e9bca1e0cceb83bce9bce3cec229faa9578b07b073056e4a119a5678b6715e0f`; install ZIP SHA-256 `03e42829f9ace83d9bca754cf7f6c1991ac01b4bb6797983493d21e067101cc0`; independent ZIP integrity/cache/hash/mode inspection.
-- Decision: `CONTINUE` to target-runtime release gate.
-- Reason: the candidate distributed from CI is the same shipped source that passed CI, contains no bytecode caches, and now preserves executable modes for every directly executed runtime script. The prior source/package and mode issues are resolved.
-- Next action: preserve PR as draft until the installed QLDS/shinqlx self-test passes on the target stack.
-- Re-plan if: self-test cannot initialize real `qzeroded.x64`, shinqlx, or `solo_arcade`, or if the readiness handshake disagrees with the requested mode.
+## Director mode matrix
+
+| Mode | Director profile | Primary job |
+| --- | --- | --- |
+| Horde | Hunt Director | Make a wave actively hunt while avoiding unfair dogpiles |
+| Arena Run | Roguelite Director | Shape rounds around theme/build without hard-counter cheating |
+| Gun Game | Flow Director | Keep reachable fights flowing through the weapon ladder |
+| Boss Rush | Duel Director | Give bosses distinct pressure rhythms rather than raw stat inflation |
+| Wipeout Solo | Squad Director | Coordinate a readable squad while preserving an achievable wipe window |
+| Gauntlet | Trial Director | Make each weapon/stage produce its intended combat shape |
+| Last Stand | Siege Director | Escalate pressure through composition/pacing |
+| One Life | Tension Director | Keep one-life stakes high without lethal difficulty spikes |
+| Bounty Hunt | Escort Director | Make the target reachable but meaningfully protected |
+| Rocket Tag | Chase Director | Maintain mobile rocket-range pursuit |
+| Movement Hunter | Pursuit Director | Force movement through pursuit, not perfect enemy accuracy |
+| Predator | Swarm Director | Preserve power fantasy with intelligent swarm pressure |
+| Accuracy Trial | Target Director | Supply useful moving targets with low incoming lethality |
+| Speedrun Combat | Feed Director | Eliminate dead time so execution determines speed |
+| Random Loadout | Improvisation Director | Create varied fights without counter-picking the random loadout |
+
+Full behavior contract: `docs/DIRECTOR_DESIGN.md`.
+
+## Director phases
+
+### Phase D0 — Measure before adapting
+
+- [ ] Implement low-frequency observation state.
+- [ ] Log pressure inputs without changing behavior.
+- [ ] Establish Horde/Gun Game/Speedrun baseline traces.
+
+**Gate:** a passive Horde match can be explained in terms of contact gaps, idle contribution and distance rather than subjective guessing alone.
+
+### Phase D1 — Engagement floor
+
+- [ ] Detect idle/non-contributing bots.
+- [ ] Recover through replacement first.
+- [ ] Investigate relocation only if safe placement can be proven.
+- [ ] Add per-profile preferred engagement/distance bands.
+
+**Gate:** simulated and live Horde has materially less wandering, with no objective corruption or hostile teleport unfairness.
+
+### Phase D2 — Roles and composition
+
+- [ ] Implement shared bot role contracts.
+- [ ] Add composition budgets and role caps.
+- [ ] Progress Horde through role complexity before bot-skill inflation.
+- [ ] Give Boss/Gauntlet/Accuracy explicit role rules.
+
+**Gate:** a harder encounter can be generated while holding native bot skill constant.
+
+### Phase D3 — Pressure budget
+
+- [ ] Estimate current pressure.
+- [ ] Define target pressure bands per mode/difficulty.
+- [ ] Add recent-damage smoothing and short recovery windows.
+- [ ] Change one major difficulty axis at a time.
+
+**Gate:** dominant and struggling simulated players produce different pacing without hidden damage, aim or impossible reaction changes.
+
+### Phase D4 — All-mode profiles
+
+- [ ] Wire every scripted Solo mode to its profile.
+- [ ] Add mode-specific dominant/struggling/idle/stale-callback tests.
+- [ ] Preserve objective state machine as sole lifecycle owner.
+
+**Gate:** every visible Solo mode has a tested Director contract.
+
+### Phase D5 — Difficulty calibration
+
+- [ ] Easy/Normal/Hard/Nightmare map to pressure targets and caps.
+- [ ] Native bot skill becomes a bounded secondary knob.
+- [ ] Diagnostics report average engaged count, combat gaps, intervention reasons and time outside pressure band.
+
+**Gate:** difficulty levels feel distinct primarily because the encounter is managed differently—not because enemies secretly become superhuman.
+
+### Phase D6 — Live quality gate
+
+Representative live suite:
+
+- [ ] Horde — engagement and wave pressure.
+- [ ] Arena Run — build/theme adaptation and bosses.
+- [ ] Gun Game — encounter flow.
+- [ ] Boss Rush — readable duel pressure.
+- [ ] Movement Hunter — pursuit without laser aim.
+- [ ] Accuracy Trial — useful targets rather than lethal opponents.
+
+Then sample remaining modes before release.
+
+**Gate:** bots feel engaged, mode-appropriate and appropriately difficult without being overpowered; no fairness law is violated.
+
+## Verification requirements
+
+Every Director profile must simulate at least:
+
+- dominant player streak;
+- severe incoming damage burst;
+- sustained low-health player;
+- idle/non-contributing bot;
+- extremely distant bot;
+- enemy death during PREPARING;
+- queued Director intervention across objective transition;
+- map change with pressure state present;
+- mode completion while an intervention is queued;
+- each difficulty preset.
+
+Every delayed Director action uses the same generation/token validity boundary as objective callbacks.
+
+## Risk-driven checkpoints
+
+### Checkpoint 1 — lifecycle architecture
+
+- Decision: CONTINUE.
+- Evidence: package import, ownership, early-kill spawning, team sandbox and generation guards pass simulation.
+
+### Checkpoint 2 — repository/package
+
+- Decision: CONTINUE.
+- Evidence: installable product, archive/source equality and CI are green.
+
+### Checkpoint 3 — automated runtime readiness
+
+- Previous decision: CONTINUE to release.
+- New decision: CHANGE.
+- Evidence: real gameplay showed that successful readiness does not prove mode correctness or bot quality.
+- Consequence: target gameplay quality is now a formal DONE gate.
+
+### Checkpoint 4 — first live gameplay repair
+
+- Evidence: live report + commit `062fb46a38fd08fcbba8a4b8bab251abf179ff10` + clean CI run `33126587095` with 57 passing tests.
+- Decision: CONTINUE to target retest.
+- Re-plan if: modes still terminate immediately or pre-ACTIVE death is not the live cause.
+
+### Checkpoint 5 — Director observation
+
+- Decision pending.
+- CONTINUE if telemetry can explain engagement failures without invasive bot control.
+- CHANGE if useful pressure cannot be inferred reliably from available QLDS/shinqlx signals.
+
+### Checkpoint 6 — Director engagement
+
+- Decision pending.
+- CONTINUE if idle recovery and composition measurably improve contact without unfair interventions.
+- CHANGE if Director intervention creates obvious teleporting, dogpiling, lifecycle corruption or rubber-banding.
+
+## Release rule
+
+PR #1 stays draft. The product is not DONE because QLDS starts or because CI is green. Release requires both software correctness **and** representative live gameplay evidence that the modes and their Director profiles deliver the intended one-player experience.
