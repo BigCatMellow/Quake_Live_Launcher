@@ -43,7 +43,7 @@ if command -v update-desktop-database >/dev/null 2>&1; then
 fi
 
 echo
-echo "Installed/updated Quake Live Launcher v5.0-alpha."
+echo "Installed/updated Quake Live Launcher v5.0-alpha-hotload1."
 echo "Open your application menu and search for: Quake Live Launcher"
 echo
 echo "No sudo/admin access was used."
