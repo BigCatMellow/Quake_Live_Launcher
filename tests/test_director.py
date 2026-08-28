@@ -77,6 +77,24 @@ class DirectorCoreTests(unittest.TestCase):
         self.assertEqual(snapshot.engaged, 1)
         self.assertFalse(any(action.kind == "recover_bot" for action in actions))
 
+    def test_damaged_idle_bot_is_never_replaced_with_fresh_health(self):
+        director = SoloDirector("horde", "normal", 7)
+        director.begin_objective(0)
+        director.register_bot(1, "slash", "chaser", 0)
+        director.note_damage(
+            now=1, damage=40, attacker_id=0, target_id=1,
+            attacker_is_bot=False, target_is_bot=True,
+        )
+        snapshot, actions = director.tick(
+            now=20,
+            player_health=125,
+            player_armor=50,
+            bots=[{"id": 1, "name": "slash", "role": "chaser", "distance": 3000}],
+            active=True,
+        )
+        self.assertEqual(snapshot.idle, 1)
+        self.assertFalse(any(action.kind == "recover_bot" for action in actions))
+
     def test_severe_damage_creates_bounded_recovery_window(self):
         director = SoloDirector("gun_game", "normal", 7)
         director.begin_objective(0)
