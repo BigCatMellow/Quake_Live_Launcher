@@ -51,6 +51,18 @@ class HotLoadRuntimeTests(unittest.TestCase):
         self.assertEqual(plugin.controller.phase.value, "active")
         self.assertTrue(plugin.controller.enemy_ids)
 
+        # Model the exact live race we are protecting against: an initialization
+        # boundary loses the level's training flag after the plugin constructor.
+        # The first live frame must restore single-player permission before the
+        # ordinary multiplayer forfeit path can own the match.
+        server.single_player_allowed = False
+        server.cvars["g_training"] = "0"
+        plugin.next_training_assert = 0
+        plugin.handle_frame()
+        self.assertTrue(server.single_player_allowed)
+        self.assertEqual(server.cvars.get("g_training"), "1")
+        self.assertEqual(plugin.controller.phase.value, "active")
+
     def test_running_server_hot_loads_new_solo_mode_without_reconnect(self):
         server, plugin, human = self.boot_directed("horde")
         server.advance(3)
