@@ -72,6 +72,17 @@ class PackageTests(unittest.TestCase):
         for token in ('set g_doWarmup "0"','set sv_warmupReadyPercentage "0"','set bot_minplayers "0"','set g_friendlyFire "0"'): self.assertIn(token,setup)
         start=(ROOT/'solo_engine/start_solo.sh').read_text(); self.assertIn('+set zmq_stats_enable 1',start); self.assertIn('+set bot_minplayers 0',start); self.assertIn('+map "$MAP" tdm',start)
         plugin=(ROOT/'solo_engine/plugins/solo_arcade.py').read_text(); self.assertIn('minqlx.allow_single_player(True)',plugin); self.assertIn('self.add_hook("player_loaded", self.handle_player_loaded)',plugin); self.assertIn('self._put_team(player, "red")',plugin); self.assertIn('self._put_team(player, "blue")',plugin)
+    def test_director_runtime_is_packaged_and_selected(self):
+        start=(ROOT/'solo_engine/start_solo.sh').read_text()
+        self.assertIn('solo_directed.py solo_director.py',start)
+        self.assertIn('+set qlx_plugins solo_directed',start)
+        directed=(ROOT/'solo_engine/plugins/solo_directed.py').read_text()
+        director=(ROOT/'solo_engine/plugins/solo_director.py').read_text()
+        self.assertIn('class solo_directed(solo_arcade)',directed)
+        self.assertIn('class SoloDirector:',director)
+        self.assertIn('DIRECTOR_LOG_FILE',directed)
+        self.assertIn('def cmd_director',directed)
+        self.assertIn('No direct', (ROOT/'docs/DIRECTOR_DESIGN.md').read_text())
     def test_all_generated_matches_are_solo_first(self):
         launcher_text=source_text('launcher.py'); self.assertIn('SINGLE_PLAYER_MATCH_CVARS = [',launcher_text)
         for token in ('set g_doWarmup "0"','set g_warmup "0"','set sv_warmupReadyPercentage "0"','set g_warmupDelay "0"','set bot_minplayers "0"'): self.assertIn(token,launcher_text)
