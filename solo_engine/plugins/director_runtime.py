@@ -80,7 +80,17 @@ class DirectorRuntime:
 
     def reset(self) -> None:
         now = self.now()
-        self.learning.finish_objective(now, reason="runtime_reset")
+        phase = getattr(getattr(self.plugin, "controller", None), "phase", None)
+        phase_value = getattr(phase, "value", "")
+        if phase_value in ("complete", "failed") and not self.session_finished:
+            self.finish_session(
+                phase_value,
+                kills=int(getattr(self.plugin, "kills", 0) or 0),
+                deaths=int(getattr(self.plugin, "player_deaths", 0) or 0),
+                duration=max(0.0, now - float(getattr(self.plugin, "start_time", now) or now)),
+            )
+        else:
+            self.learning.finish_objective(now, reason="runtime_reset")
         self.director.reset()
         self.pending_roles.clear()
         self.pending_action_ids.clear()
@@ -183,9 +193,14 @@ class DirectorRuntime:
         return self.learning.adjust_reinforcement_delay(delay, self.director.last_snapshot)
 
     def apply_bot_loadout(self, player, plan: dict | None = None) -> bool:
-        """Apply a role loadout; authored trials and bosses still override it."""
+        """Apply a role loadout; authored mode contracts still override it."""
         try:
             plan = plan or {}
+            # Rocket Tag is a hard gameplay contract, not a Director preference.
+            if self.plugin.mode == "rocket_tag":
+                self.plugin._give_single_weapon(player, 5)
+                return True
+
             track = self.director.tracks.get(int(player.id))
             role = track.role if track else "skirmisher"
             spec = ROLE_SPECS.get(role, ROLE_SPECS["skirmisher"])
@@ -339,8 +354,6 @@ class DirectorRuntime:
             special=base_role in ("boss", "target"),
         )
 
-        # Remove ownership before kicking so recovery cannot become a kill,
-        # objective clear, or score event.
         self.plugin.controller.remove_enemy(cid)
         self.director.forget_bot(cid)
         self.pending_roles.append(role)
@@ -409,9 +422,7 @@ class DirectorRuntime:
                 "recent_damage_taken": snapshot.recent_damage_taken,
                 "recent_damage_dealt": snapshot.recent_damage_dealt,
                 "hold_until": snapshot.hold_until,
-                "roles": {
-                    str(cid): track.role for cid, track in self.director.tracks.items()
-                },
+                "roles": {str(cid): track.role for cid, track in self.director.tracks.items()},
                 "actions": [
                     {"kind": a.kind, "reason": a.reason, "bot_id": a.bot_id, "role": a.role, "duration": a.duration}
                     for a in actions
