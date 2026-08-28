@@ -55,15 +55,17 @@ class DirectorRuntimeTests(unittest.TestCase):
         alive_before = len(plugin.controller.enemy_ids)
 
         human.position(x=0, y=0, z=0)
-        idle = bots[0]
-        idle.position(x=3000, y=0, z=0)
-        for bot in bots[1:]:
-            bot.position(x=250, y=0, z=0)
-
         now = time.time() + 20
-        plugin.director.tracks[idle.id].last_contact = now - 20
-        plugin.director_next_tick = 0
-        plugin._director_tick(now)
+        # Recovery should only happen when the encounter as a whole has gone
+        # quiet; one wandering bot is not enough while others are fighting.
+        for index, bot in enumerate(bots):
+            bot.position(x=5000 if index == 0 else 3000 + index * 100, y=0, z=0)
+            track = plugin.director_runtime.director.tracks[bot.id]
+            track.last_contact = now - 20
+            track.spawned_at = now - 20
+            track.damage_received = 0
+        idle = bots[0]
+        plugin.director_runtime.tick(force=True, now=now)
 
         self.assertEqual(plugin.controller.phase.value, "active")
         self.assertEqual(plugin.horde.wave, wave_before)
@@ -84,9 +86,8 @@ class DirectorRuntimeTests(unittest.TestCase):
             bot.position(x=300, y=0, z=0)
 
         plugin.handle_damage(human, victim, 85, 0, 6)
-        plugin.director_next_tick = 0
-        plugin._director_tick(time.time())
-        self.assertTrue(plugin.director.should_hold_reinforcements(time.time()))
+        plugin.director_runtime.tick(force=True, now=time.time())
+        self.assertTrue(plugin.director_runtime.director.should_hold_reinforcements(time.time()))
 
         count_before = len(plugin.controller.enemy_ids)
         server.death(victim, human)
@@ -103,8 +104,8 @@ class DirectorRuntimeTests(unittest.TestCase):
         bots = self.active_bots(server, plugin)
         self.assertTrue(bots)
         for bot in bots:
-            role = plugin.director_roles.get(bot.id)
-            self.assertIsNotNone(role)
+            track = plugin.director_runtime.director.tracks.get(bot.id)
+            self.assertIsNotNone(track)
             self.assertLessEqual(len(bot._weapons), 4)
             self.assertNotEqual(set(bot._weapons), {"g", "mg", "sg", "gl", "rl", "lg", "rg", "pg"})
 
@@ -114,11 +115,11 @@ class DirectorRuntimeTests(unittest.TestCase):
         human.position(x=0, y=0, z=0)
         for bot in self.active_bots(server, plugin):
             bot.position(x=400, y=0, z=0)
-        plugin.director_next_tick = 0
-        plugin._director_tick(time.time())
+        plugin.director_runtime.tick(force=True, now=time.time())
         plugin.cmd_director(human, ["!director"], None)
         self.assertTrue(any("DIRECTOR" in message for message in human.tells))
         self.assertTrue(any("pressure=" in message for message in human.tells))
+        self.assertTrue(any("Learning:" in message for message in human.tells))
 
     def test_rocket_tag_bots_obey_rocket_only_contract(self):
         server, plugin, human = self.boot_directed("rocket_tag")
