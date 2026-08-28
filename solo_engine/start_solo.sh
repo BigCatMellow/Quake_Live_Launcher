@@ -129,6 +129,7 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox + encoun
     +set bot_minplayers 0 \
     +set g_friendlyFire 0 \
     +set g_teamForceBalance 0 \
+    +set g_training 1 \
     +exec server.cfg \
     +set qlx_plugins solo_directed \
     +map "$MAP" tdm
