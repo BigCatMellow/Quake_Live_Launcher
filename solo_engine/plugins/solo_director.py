@@ -346,13 +346,15 @@ class SoloDirector:
                 too_far = track.distance is not None and track.distance >= self.profile.far_distance
                 idle_long = contact_age >= self.profile.idle_timeout
                 cooled_down = now - track.last_recovery >= self.profile.recovery_cooldown
-                # Distance alone never overrides fresh combat evidence. A bot
-                # that just dealt/took damage is contributing even if it is
-                # currently across the map, so leave native AI in control.
-                recent_contact = contact_age <= 3.0
-                if cooled_down and not recent_contact and (too_far or idle_long):
+                out_of_contact = track.distance is None or track.distance > self.profile.engage_distance
+                # Replacement is intentionally conservative. A bot must be
+                # non-contributing for the full mode timeout, and the player
+                # must not have already invested damage into it. This prevents
+                # unfair health resets and spawn-point churn on large maps.
+                uncontested = track.damage_received <= 0.0
+                if cooled_down and idle_long and out_of_contact and uncontested:
                     distance_score = (track.distance or 0.0) / max(1.0, self.profile.far_distance)
-                    candidates.append((contact_age + distance_score * 2.0, cid, track))
+                    candidates.append((contact_age + distance_score * 2.0 + int(too_far), cid, track))
             if candidates:
                 _, cid, track = max(candidates, key=lambda item: item[0])
                 track.last_recovery = now
