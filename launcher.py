@@ -86,7 +86,7 @@ def wait_for_solo_match_switch(request_id: str, mode: str, timeout: float = 15.0
             state = str(payload.get("state") or "")
             if state == "failed":
                 raise RuntimeError(str(payload.get("error") or "Solo hot-load failed"))
-            if state in {"loading", "started", "active"} and solo_plugin_ready(mode):
+            if state in {"started", "active"} and solo_plugin_ready(mode):
                 return payload
         time.sleep(0.10)
     raise RuntimeError(f"Solo Engine did not acknowledge hot-load request for {mode} within {timeout:.0f}s.")
