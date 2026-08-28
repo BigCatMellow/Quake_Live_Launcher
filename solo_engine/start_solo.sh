@@ -62,7 +62,7 @@ log "Synchronizing Solo plugin package"
 rm -rf "$QLDS/minqlx-plugins"
 mkdir -p "$QLDS/minqlx-plugins"
 run_logged cp "$SOURCE_DIR/plugins/__init__.py" "$QLDS/minqlx-plugins/__init__.py" || fail 10 "Could not copy plugin package __init__.py"
-for file in solo_arcade.py solo_directed.py solo_director.py solo_controller.py solo_core.py; do
+for file in solo_arcade.py solo_directed.py solo_director.py director_runtime.py director_learning.py solo_controller.py solo_core.py; do
   run_logged cp "$SOURCE_DIR/plugins/$file" "$QLDS/minqlx-plugins/$file" || fail 10 "Could not copy $file"
 done
 mkdir -p "$QLDS/minqlx-plugins/modes"
