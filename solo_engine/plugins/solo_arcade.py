@@ -20,6 +20,7 @@ try:  # Runtime: minqlx loads this inside its plugin package.
     from .modes.gun_game import GunGameState
     from .modes.horde import HordeState
     from .solo_controller import Phase, SoloController
+    from .director_runtime import DirectorRuntime
     from .solo_core import (
         BOT_ROSTER, RARITY_COLOR, UPGRADE_BY_ID, advance_round, load_state,
         new_state, pick_upgrade, roll_upgrade_choices, round_plan, save_state,
@@ -29,6 +30,7 @@ except ImportError:  # Direct local/unit-test import fallback.
     from modes.gun_game import GunGameState
     from modes.horde import HordeState
     from solo_controller import Phase, SoloController
+    from director_runtime import DirectorRuntime
     from solo_core import (
         BOT_ROSTER, RARITY_COLOR, UPGRADE_BY_ID, advance_round, load_state,
         new_state, pick_upgrade, roll_upgrade_choices, round_plan, save_state,
@@ -130,6 +132,8 @@ class solo_arcade(minqlx.Plugin):
         self.airborne = set()
         self.prev_vz = {}
         self.ground_ticks = {}
+
+        self.director_runtime = DirectorRuntime(self, self.mode, self.difficulty, self.seed, RUNTIME_DIR)
 
         self._require_runtime_contract()
         self._configure_engine()
@@ -284,10 +288,13 @@ class solo_arcade(minqlx.Plugin):
                     pass
         self.controller.enemy_ids.clear()
         self.preactive_dead_ids.clear()
+        if hasattr(self, "director_runtime"):
+            self.director_runtime.reset()
 
     def _spawn_objective_bots(self, names, skill, *, auto_clear=True):
         names = list(names)
         self.clear_all_bots()
+        self.director_runtime.begin_objective()
         self.pending_replacements = 0
         token = self.controller.begin_objective(len(names), auto_clear=auto_clear)
         for index, name in enumerate(names):
@@ -305,6 +312,7 @@ class solo_arcade(minqlx.Plugin):
         token = self.controller.token()
         name = name or random.choice(BOT_ROSTER_RUNTIME)
         skill = self.skill if skill is None else skill
+        delay = self.director_runtime.reinforcement_delay(delay)
         @minqlx.delay(delay)
         def _add():
             if self.controller.token_valid(token, Phase.ACTIVE):
@@ -353,11 +361,12 @@ class solo_arcade(minqlx.Plugin):
                 self._kick_bot_id(player.id)
                 return
             activated = self.controller.enemy_spawned(player.id)
+            role = self.director_runtime.bot_spawned(player)
             self._apply_bot_loadout(player)
             self._log(
                 f"enemy spawn id={player.id} fulfilled={self.controller.fulfilled_spawns}/"
                 f"{self.controller.expected_spawns} alive={len(self.controller.enemy_ids)} "
-                f"phase={self.controller.phase.value}"
+                f"phase={self.controller.phase.value} role={role}"
             )
             if activated:
                 self._retire_preactive_dead()
@@ -669,6 +678,7 @@ class solo_arcade(minqlx.Plugin):
             self._log(f"ignored death of unowned bot id={victim.id}")
             return
         phase_before = self.controller.phase
+        self.director_runtime.bot_died(victim, killer)
         killer_human = is_player_object(killer) and not is_bot(killer)
         killer_bot = is_player_object(killer) and is_bot(killer)
         if killer_bot:
@@ -768,6 +778,7 @@ class solo_arcade(minqlx.Plugin):
         if self.controller.phase != Phase.ACTIVE:
             self._log(f"ignored pre-active human death phase={self.controller.phase.value}")
             return
+        self.director_runtime.human_died()
         self.player_deaths += 1
         if self.mode == "arena_run" and self.run:
             if self.controller.phase == Phase.ACTIVE:
@@ -875,6 +886,8 @@ class solo_arcade(minqlx.Plugin):
 
     def _apply_bot_loadout(self, player):
         plan = self.current_plan or {}
+        if self.director_runtime.apply_bot_loadout(player, plan):
+            return
         try:
             # Scripted servers disable map weapon/ammo pickups. Give every bot
             # a combat-ready loadout so its AI can immediately hunt the human
@@ -926,6 +939,10 @@ class solo_arcade(minqlx.Plugin):
 
     # ---------- damage/upgrades ----------
     def handle_damage(self, target, attacker, damage, dflags, means_of_death):
+        try:
+            self.director_runtime.note_damage(target, attacker, damage)
+        except Exception as exc:
+            self._log(f"director damage observation failed: {exc}")
         if self.mode != "arena_run" or not self.run:
             return
         if not is_player_object(target) or not is_player_object(attacker):
@@ -1077,6 +1094,10 @@ class solo_arcade(minqlx.Plugin):
                         self.last_regen_tick[player.id] = now
             except Exception:
                 continue
+        try:
+            self.director_runtime.tick()
+        except Exception as exc:
+            self._log(f"director tick failed: {exc}")
 
     # ---------- commands ----------
     def cmd_run(self, player, msg, channel):
@@ -1086,7 +1107,8 @@ class solo_arcade(minqlx.Plugin):
         if self.mode == "gun_game" and self.gun_game: extra = f" weapon={self.gun_game.weapon_name}"
         player.tell(
             f"^6Solo v5:^7 mode={self.mode} phase={self.controller.phase.value}{extra} "
-            f"alive={len(self.controller.enemy_ids)} spawns={self.controller.fulfilled_spawns}/{self.controller.expected_spawns}"
+            f"alive={len(self.controller.enemy_ids)} spawns={self.controller.fulfilled_spawns}/{self.controller.expected_spawns} "
+            f"director=[{self.director_runtime.summary()}]"
         )
 
     def cmd_help(self, player, msg, channel):
