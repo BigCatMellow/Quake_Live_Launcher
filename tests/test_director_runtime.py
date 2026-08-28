@@ -56,8 +56,6 @@ class DirectorRuntimeTests(unittest.TestCase):
 
         human.position(x=0, y=0, z=0)
         now = time.time() + 20
-        # Recovery should only happen when the encounter as a whole has gone
-        # quiet; one wandering bot is not enough while others are fighting.
         for index, bot in enumerate(bots):
             bot.position(x=5000 if index == 0 else 3000 + index * 100, y=0, z=0)
             track = plugin.director_runtime.director.tracks[bot.id]
@@ -74,6 +72,12 @@ class DirectorRuntimeTests(unittest.TestCase):
         self.assertEqual(plugin.controller.phase.value, "active")
         self.assertEqual(plugin.horde.wave, wave_before)
         self.assertEqual(len(plugin.controller.enemy_ids), alive_before)
+
+        actions_file = plugin.director_runtime.actions_file
+        self.assertTrue(actions_file.exists())
+        rows = [json.loads(line) for line in actions_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+        self.assertTrue(any(row.get("event") == "decision" and row.get("action") == "recover_bot" for row in rows))
+        self.assertTrue(any(row.get("event") == "execution_result" and row.get("result") == "replacement_spawned" for row in rows))
 
     def test_gun_game_damage_burst_holds_replacement_without_changing_bot_skill(self):
         server, plugin, human = self.boot_directed("gun_game")
@@ -120,6 +124,18 @@ class DirectorRuntimeTests(unittest.TestCase):
         self.assertTrue(any("DIRECTOR" in message for message in human.tells))
         self.assertTrue(any("pressure=" in message for message in human.tells))
         self.assertTrue(any("Learning:" in message for message in human.tells))
+
+    def test_completed_mode_persists_session_player_model(self):
+        server, plugin, human = self.boot_directed("one_life")
+        server.advance(3)
+        plugin.kills = 7
+        plugin.player_deaths = 0
+        plugin._finish_mode("done")
+        player_file = plugin.director_runtime.learning.player_file
+        self.assertTrue(player_file.exists())
+        model = json.loads(player_file.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(model.get("sessions", 0), 1)
+        self.assertEqual(model["modes"]["one_life"]["sessions"], 1)
 
     def test_rocket_tag_bots_obey_rocket_only_contract(self):
         server, plugin, human = self.boot_directed("rocket_tag")
