@@ -17,6 +17,7 @@ class FakePlayer:
         self.health = 100
         self.armor = 0
         self.is_alive = True
+        self._position = SimpleNamespace(x=0.0, y=0.0, z=0.0)
         self._velocity = SimpleNamespace(x=0.0, y=0.0, z=0.0)
         self._ammo = SimpleNamespace(mg=0, sg=0, gl=0, rl=0, lg=0, rg=0, pg=0)
         self._weapons = {}
@@ -26,6 +27,10 @@ class FakePlayer:
 
     def put(self, team): self.team = team
     def kick(self, reason=""): self.server.players.pop(self.id, None)
+    def position(self, reset=False, **kwargs):
+        if reset: self._position=SimpleNamespace(x=0.0,y=0.0,z=0.0)
+        for key,value in kwargs.items(): setattr(self._position,key,float(value))
+        return self._position
     def weapons(self, reset=False, **kwargs):
         if reset: self._weapons = {}
         self._weapons.update(kwargs); return SimpleNamespace(**self._weapons)
