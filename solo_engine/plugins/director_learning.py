@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import math
 import os
-import random
 import time
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
@@ -68,7 +66,6 @@ class DirectorLearning:
         self._decay_old_model()
         self._session_event("session_start", difficulty=self.difficulty, seed=self.seed)
 
-    # ---------- public model ----------
     def pressure_shift(self) -> float:
         mode = self.player.get("modes", {}).get(self.mode, {})
         if int(mode.get("objectives", 0)) < 3:
@@ -166,8 +163,6 @@ class DirectorLearning:
         scored = sorted(((score(role), role) for role in allowed), reverse=True)
         best_score, best_role = scored[0]
         base_score = next(value for value, role in scored if role == base_role)
-        # Learning must have a meaningful advantage before overriding the mode's
-        # authored role plan. This keeps adaptation subtle and comprehensible.
         if best_role != base_role and best_score - base_score >= 0.08:
             return best_role
         return base_role
@@ -183,17 +178,16 @@ class DirectorLearning:
             return max(0.18, delay * 0.82)
         return delay
 
-    # ---------- action experiments ----------
     def open_action(self, action, snapshot, roles: Iterable[str], now: float) -> str:
         self.action_serial += 1
         action_id = f"{self.session_id}-{self.action_serial:04d}"
-        kind = str(action.kind)
+        action_kind = str(action.kind)
         expectation = "pressure_toward_target"
-        if kind == "hold_reinforcements":
+        if action_kind == "hold_reinforcements":
             expectation = "danger_falls_without_pressure_spike"
         experiment = {
             "id": action_id,
-            "kind": kind,
+            "kind": action_kind,
             "reason": str(action.reason),
             "bot_id": action.bot_id,
             "role": action.role,
@@ -208,7 +202,7 @@ class DirectorLearning:
             "execution": "pending",
         }
         self.pending[action_id] = experiment
-        self._session_event("director_decision", **experiment)
+        self._session_event("director_decision", experiment=experiment)
         return action_id
 
     def mark_execution(self, action_id: str, result: str, **details) -> None:
@@ -232,8 +226,8 @@ class DirectorLearning:
                 after > float(high) + 12.0
                 or float(snapshot.recent_damage_taken) > max(70.0, float(experiment.get("baseline_damage_taken", 0.0)) + 45.0)
             )
-            kind = str(experiment.get("kind", ""))
-            if kind == "hold_reinforcements":
+            action_kind = str(experiment.get("kind", ""))
+            if action_kind == "hold_reinforcements":
                 success = not danger and (
                     float(snapshot.recent_damage_taken) <= float(experiment.get("baseline_damage_taken", 0.0)) * 0.65
                     or after <= float(high)
@@ -243,7 +237,7 @@ class DirectorLearning:
             score = clamp(0.5 + improvement / 45.0 - (0.35 if danger else 0.0), 0.0, 1.0)
             evaluation = {
                 "action_id": action_id,
-                "kind": kind,
+                "kind": action_kind,
                 "success": bool(success),
                 "score": score,
                 "pressure_before": before,
@@ -256,13 +250,12 @@ class DirectorLearning:
             }
             evaluations.append(evaluation)
             self._learn_from_experiment(experiment, evaluation)
-            self._session_event("director_evaluation", **evaluation)
+            self._session_event("director_evaluation", evaluation=evaluation)
             self.pending.pop(action_id, None)
         if evaluations:
             self._save_models()
         return evaluations
 
-    # ---------- objective/session learning ----------
     def finish_objective(self, now: float, *, reason: str) -> None:
         obj = self.objective
         if not obj or int(obj.get("ticks", 0)) <= 0:
@@ -320,7 +313,6 @@ class DirectorLearning:
         self.finalized = True
         self._save_models()
 
-    # ---------- private learning ----------
     def _update_player_objective(self, avg_pressure, low_fraction, high_fraction, severe_fraction, avg_taken, avg_dealt, duration):
         mode = self.player.setdefault("modes", {}).setdefault(self.mode, {})
         mode["objectives"] = int(mode.get("objectives", 0)) + 1
@@ -365,17 +357,20 @@ class DirectorLearning:
         row["last_seen"] = time.time()
 
     def _decay_old_model(self) -> None:
-        # Old preferences should inform a new session, not fossilize it. Decay
-        # toward neutral each time the learning layer is constructed.
         mode = self.player.get("modes", {}).get(self.mode)
         if isinstance(mode, dict):
             mode["pressure_shift"] = float(mode.get("pressure_shift", 0.0)) * 0.985
 
-    # ---------- persistence/debug ----------
-    def _session_event(self, kind: str, **payload) -> None:
+    def _session_event(self, event: str, **payload) -> None:
         try:
             self.sessions_dir.mkdir(parents=True, exist_ok=True)
-            row = {"schema": SCHEMA_VERSION, "time": time.time(), "kind": str(kind), "mode": self.mode}
+            row = {
+                "schema": SCHEMA_VERSION,
+                "time": time.time(),
+                "kind": "director_session",
+                "event": str(event),
+                "mode": self.mode,
+            }
             row.update(payload)
             with self.session_file.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(row, sort_keys=True, default=self._json_default) + "\n")
