@@ -71,6 +71,30 @@ class DirectorLearningTests(unittest.TestCase):
             self.assertGreater(row["success_ema"], 0.9)
             self.assertTrue(learner.session_file.exists())
 
+    def test_failed_action_creates_small_session_only_correction(self):
+        with TemporaryDirectory() as tmp:
+            learner = DirectorLearning(Path(tmp), "horde", "normal", 15)
+            action = DirectorAction("recover_bot", "idle chaser", bot_id=7, role="chaser")
+            action_id = learner.open_action(action, snapshot(pressure=18), ["chaser"], 0)
+            learner.mark_execution(action_id, "replacement_spawned", replacement_bot_id=8)
+            evaluations = learner.note_snapshot(snapshot(pressure=15, taken=0), ["chaser"], 5)
+            self.assertEqual(len(evaluations), 1)
+            self.assertFalse(evaluations[0]["success"])
+            self.assertGreater(learner.live_pressure_bias, 0.0)
+            self.assertGreater(learner.pressure_shift(), 0.0)
+            # Session correction must stay tightly bounded.
+            self.assertLessEqual(abs(learner.live_pressure_bias), 4.0)
+
+    def test_dangerous_action_immediately_biases_director_to_back_off(self):
+        with TemporaryDirectory() as tmp:
+            learner = DirectorLearning(Path(tmp), "horde", "normal", 16)
+            action = DirectorAction("recover_bot", "pressure test", bot_id=7, role="chaser")
+            action_id = learner.open_action(action, snapshot(pressure=50, taken=5), ["chaser"], 0)
+            learner.mark_execution(action_id, "replacement_spawned", replacement_bot_id=8)
+            evaluations = learner.note_snapshot(snapshot(pressure=92, taken=100, health=30, armor=0), ["chaser"], 5)
+            self.assertTrue(evaluations[0]["danger"])
+            self.assertLess(learner.live_pressure_bias, 0.0)
+
     def test_learning_can_prefer_proven_role_but_cannot_leave_allowed_set(self):
         with TemporaryDirectory() as tmp:
             learner = DirectorLearning(Path(tmp), "horde", "normal", 12)
@@ -95,6 +119,35 @@ class DirectorLearningTests(unittest.TestCase):
                 "boss", ("chaser", "gunner"), [], snapshot(pressure=18), special=True
             )
             self.assertEqual(special, "boss")
+
+    def test_learned_role_selection_respects_composition_caps(self):
+        with TemporaryDirectory() as tmp:
+            learner = DirectorLearning(Path(tmp), "horde", "normal", 17)
+            learner.player.setdefault("modes", {})["horde"] = {"objectives": 6, "pressure_shift": 0.0}
+            learner.playbook.setdefault("modes", {})["horde"] = {
+                "roles": {
+                    "chaser": {"attempts": 10, "efficiency_ema": 0.20},
+                    "gunner": {"attempts": 10, "efficiency_ema": 0.95},
+                },
+                "compositions": {},
+            }
+            # Gunner is learned as effective, but two are already active.
+            chosen = learner.choose_role(
+                "chaser", ("chaser", "gunner"), ["gunner", "gunner"], snapshot(pressure=18)
+            )
+            self.assertEqual(chosen, "chaser")
+
+    def test_playbook_records_dominant_composition_with_counts(self):
+        with TemporaryDirectory() as tmp:
+            learner = DirectorLearning(Path(tmp), "horde", "normal", 18)
+            learner.begin_objective(0)
+            for now in (1, 2, 3):
+                learner.note_snapshot(snapshot(pressure=52, taken=10, dealt=30), ["chaser", "chaser", "gunner"], now)
+            learner.note_snapshot(snapshot(pressure=50), ["chaser", "gunner"], 4)
+            learner.finish_objective(6, reason="test")
+            comps = learner.playbook["modes"]["horde"]["compositions"]
+            self.assertIn("chaser+chaser+gunner", comps)
+            self.assertEqual(comps["chaser+chaser+gunner"]["attempts"], 1)
 
     def test_reinforcement_timing_adapts_pressure_not_damage(self):
         with TemporaryDirectory() as tmp:
