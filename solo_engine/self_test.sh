@@ -44,7 +44,7 @@ data={
 open(path,'w').write(json.dumps(data,indent=2)+'\n')
 PY
 
-printf '[self-test] launching real QLDS/shinqlx/plugin on 127.0.0.1:27961\n' | tee -a "$TEST_LOG"
+printf '[self-test] launching real QLDS/shinqlx/Director plugin on 127.0.0.1:27961\n' | tee -a "$TEST_LOG"
 QLL_SKIP_READY_CHECK=1 QLL_SOLO_PORT=27961 "$SOURCE_DIR/start_solo.sh" >>"$TEST_LOG" 2>&1
 
 "$VENV/bin/python" - "$READY_JSON" <<'PY'
@@ -52,7 +52,7 @@ import json,sys
 p=json.load(open(sys.argv[1]))
 assert p.get('ready') is True, p
 assert p.get('mode') == 'horde', p
-print('[self-test] plugin handshake verified:', p)
+print('[self-test] Director plugin handshake verified:', p)
 PY
 
-printf '[self-test] PASS: qzeroded + shinqlx + solo_arcade initialized successfully\n' | tee -a "$TEST_LOG"
+printf '[self-test] PASS: qzeroded + shinqlx + solo_directed initialized successfully\n' | tee -a "$TEST_LOG"
