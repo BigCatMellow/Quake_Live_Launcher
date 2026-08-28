@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import time
 import unittest
 
@@ -63,6 +64,17 @@ class HotLoadRuntimeTests(unittest.TestCase):
         self.assertEqual(server.cvars.get("g_training"), "1")
         self.assertEqual(plugin.controller.phase.value, "active")
 
+    def test_directed_server_advertises_hotload_protocol_for_its_pid(self):
+        _server, plugin, _human = self.boot_directed("horde")
+        runtime = self.harness.home / ".local/share/quake-live-launcher/solo_runtime"
+        marker = json.loads((runtime / "hotload_ready.json").read_text())
+        self.assertTrue(marker["ready"])
+        self.assertEqual(marker["protocol"], 1)
+        self.assertEqual(marker["pid"], os.getpid())
+        self.assertEqual(marker["mode"], "horde")
+        plugin.handle_unload(plugin)
+        self.assertFalse((runtime / "hotload_ready.json").exists())
+
     def test_running_server_hot_loads_new_solo_mode_without_reconnect(self):
         server, plugin, human = self.boot_directed("horde")
         server.advance(3)
@@ -101,6 +113,9 @@ class HotLoadRuntimeTests(unittest.TestCase):
         self.assertEqual(server.cvars.get("g_training"), "1")
         ready = json.loads((runtime / "plugin_ready.json").read_text())
         self.assertEqual(ready["mode"], "gun_game")
+        hotload = json.loads((runtime / "hotload_ready.json").read_text())
+        self.assertEqual(hotload["mode"], "gun_game")
+        self.assertEqual(hotload["protocol"], 1)
         status = json.loads((runtime / "match_status.json").read_text())
         self.assertEqual(status["request_id"], request_id)
         self.assertEqual(status["state"], "loading")
