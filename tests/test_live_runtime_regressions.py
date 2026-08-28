@@ -62,19 +62,19 @@ class LiveRuntimeRegressions(unittest.TestCase):
         original_count = len(plugin.controller.enemy_ids)
         human.position(x=0, y=0, z=0)
 
-        # Make the entire encounter genuinely low-pressure. The Director should
-        # not recycle one distant bot while the rest are already pressuring the
-        # player. The chosen victim is made the clearest non-contributor so the
-        # recovery decision is deterministic.
+        # Keep the simulated clock monotonic with the runtime clock used when
+        # the objective began. Then make the entire encounter genuinely
+        # low-pressure; the farthest bot is the deterministic recovery target.
+        now = plugin.director_runtime.now() + 20.0
         for index, bot in enumerate(bots):
             distance = 5000 if bot.id == victim.id else 3000 + index * 100
             bot.position(x=distance, y=0, z=0)
             track = plugin.director_runtime.director.tracks[bot.id]
-            track.spawned_at = 0
-            track.last_contact = 0
+            track.spawned_at = now - 20.0
+            track.last_contact = now - 20.0
             track.damage_received = 0
 
-        snapshot, actions = plugin.director_runtime.tick(force=True, now=20)
+        snapshot, actions = plugin.director_runtime.tick(force=True, now=now)
         self.assertIsNotNone(snapshot)
         self.assertLess(snapshot.pressure, snapshot.pressure_low)
         self.assertEqual(snapshot.engaged, 0)
