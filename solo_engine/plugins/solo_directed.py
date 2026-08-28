@@ -54,6 +54,7 @@ class solo_directed(solo_arcade):
         self.last_match_request_id = self._existing_match_request_id()
         self.active_match_request_id = None
         self.next_match_request_poll = 0.0
+        self.next_training_assert = 0.0
         self._force_training_contract()
         self.add_command("director", self.cmd_director)
 
@@ -61,8 +62,9 @@ class solo_directed(solo_arcade):
     def _force_training_contract(self):
         # shinqlx.allow_single_player() mutates the current level. During very
         # early plugin bootstrap there may be no CurrentLevel yet, so start_solo
-        # also sets g_training=1 before +map. Reassert both here on every major
-        # lifecycle boundary to keep QL's normal multiplayer forfeit logic out.
+        # also requests g_training=1 before +map. Reassert both on lifecycle
+        # boundaries and from live frames so a too-early initialization call
+        # cannot leave the real loaded level in normal multiplayer forfeit mode.
         try:
             self.set_cvar("g_training", "1")
         except Exception:
@@ -79,6 +81,7 @@ class solo_directed(solo_arcade):
     def handle_map(self, map_name, factory):
         self._force_training_contract()
         result = super().handle_map(map_name, factory)
+        self.next_training_assert = 0.0
         self._force_training_contract()
         return result
 
@@ -226,6 +229,7 @@ class solo_directed(solo_arcade):
 
         self._force_training_contract()
         self._configure_engine()
+        self.next_training_assert = 0.0
         self._force_training_contract()
         self._write_ready(True)
         self._write_match_status("loading", request_id)
@@ -235,6 +239,9 @@ class solo_directed(solo_arcade):
 
     def handle_frame(self):
         now = time.time()
+        if now >= self.next_training_assert:
+            self.next_training_assert = now + 1.0
+            self._force_training_contract()
         self._poll_match_request(now)
         return super().handle_frame()
 
