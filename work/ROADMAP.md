@@ -1,267 +1,177 @@
 # Roadmap: Quake Live Launcher v5
 
 - State: WORKING
-- Current MAPS decision: CHANGE, then CONTINUE
-- Center of gravity: a one-player Quake Live launcher where every visible mode reliably starts, plays, ends correctly, and uses bots that create fun, mode-appropriate pressure without cheating.
 
 ## Current reality
 
-- `v5-alpha` is a complete installable launcher with native Arcade, 15 scripted Solo modes, map scanning/sync, movement, setup, diagnostics and CI packaging.
-- Repository/package proof is strong: compile, shell/JSON validation, install/import/uninstall smoke and archive/source equality pass in GitHub Actions.
-- Real Linux Mint + QLDS + shinqlx execution is now proven far enough to launch and play scripted combat.
-- Real gameplay disproved the previous assumption that plugin readiness/self-test was sufficient final proof:
-  - Horde launched and was fightable, but bots felt too passive/disinterested.
-  - multiple other scripted modes appeared to end immediately after starting.
-- The first live repair is committed: pre-ACTIVE human deaths are ignored, scripted bots receive real combat loadouts, and bot AI cvars are tightened. Clean GitHub Actions run `33126587095` passes 57 tests, including regressions for both observed live symptoms.
-- The live repair still requires target-machine confirmation.
-- A new Director subsystem is now part of the product plan. Design authority: `docs/DIRECTOR_DESIGN.md`.
+- `v5-alpha` is the complete installable launcher/product branch.
+- Real Linux Mint gameplay proved that QLDS + shinqlx + plugin readiness can succeed while encounter quality is still wrong; live gameplay quality is therefore a required release gate rather than post-release polish.
+- The shared lifecycle fixes, startup-death guard, team sandbox, combat-ready bots, package verification and installed runtime gate are retained.
+- The Encounter Director is now integrated into the production Solo runtime.
+- Evidence: production Director integration commit `9c055e8d7046ef9b723149c392f670463cc3f271`; clean product CI run `33173627036` PASS on `eb97f1ade16f1bd77ba25d69e050aaab95b9fb8e`; artifact `9686633905`; detailed checkpoint `work/DIRECTOR_CHECKPOINT.md`.
 
 ## Definition of DONE
 
-A v5 release is DONE only when all of the following are true:
+DONE requires all of the following:
 
-1. Fresh checkout/install succeeds on the target Linux family without requiring admin access for normal use.
-2. Quick Play, Arcade, Solo and Custom Match remain intact.
-3. Every visible scripted Solo mode reliably starts, reaches gameplay, progresses and reaches its intended terminal/failure state.
-4. No mode can end because of a joining/team-transition death before gameplay becomes ACTIVE.
-5. QLDS process + socket + shinqlx/plugin readiness are verified before client launch.
-6. Repository/package CI passes compile, lifecycle simulation, install smoke, archive/source equality and executable-mode checks.
-7. Real target-machine gameplay validates representative mode families; automated self-test alone is not sufficient.
-8. Every scripted Solo mode has an explicit Director profile or a documented neutral profile.
-9. Director difficulty is expressed primarily through encounter composition, pressure, engagement timing and recovery—not hidden aim/damage cheating.
-10. Bots do not spend material portions of an active objective wandering, searching for disabled pickups, or failing to contribute without the Director detecting/recovering them.
-11. Easy/Normal/Hard/Nightmare remain recognizably different while obeying the Director fairness laws in `docs/DIRECTOR_DESIGN.md`.
-12. Diagnostics can explain Director interventions and the reason for them.
-13. PR #1 remains draft until the target gameplay gates pass; merge/release happens only after the evidence supports DONE.
+1. complete installable launcher and all visible modes have implemented lifecycle behavior;
+2. full product CI, install/import/uninstall and archive/source equality pass;
+3. real target QLDS/shinqlx initialization passes;
+4. every scripted Solo mode has an explicit Director profile;
+5. Director fairness laws are enforced by code/tests;
+6. representative live modes demonstrate engaged, mode-appropriate bots without obvious cheating, inert wandering, accidental instant endings or unfair pressure spikes;
+7. telemetry can explain Director interventions and provide evidence for tuning.
+
+A successful readiness handshake alone is not sufficient evidence of DONE.
 
 ## Product boundaries
 
-### In scope
+- One-user Linux/offline Quake Live launcher.
+- Quake Live owns navigation, aim, firing, movement physics, weapons and collision.
+- `solo_arcade` owns mode lifecycle and scripted objectives.
+- Encounter Director owns encounter composition, pressure observation, role assignment, reinforcement pacing and explicitly permitted recovery actions.
+- Director does not directly aim, fire, path, or secretly multiply damage.
 
-- Linux-first one-human Quake Live launcher.
-- Native Arcade modes.
-- 15 scripted Solo modes.
-- Mode-specific bot encounters managed by a common Director.
-- Map recommendations/sync, movement, setup, diagnostics and packaging.
+## Core product phases — completed foundation
 
-### Not doing
+- [x] Restore launcher, resources, map scanning/recommendations and installer.
+- [x] Replace bootstrap-player workarounds with native single-player contract.
+- [x] Use hidden RED-human vs BLUE-enemy team sandbox.
+- [x] Separate intended spawns from living enemy ownership.
+- [x] Guard delayed callbacks with lifecycle generations.
+- [x] Require plugin readiness rather than UDP-only health.
+- [x] Correct startup/team-transition death race.
+- [x] Give scripted bots explicit combat-ready loadouts and suitable engine bot cvars.
+- [x] Maintain 15-mode fake-minqlx lifecycle matrix.
 
-- Public multiplayer matchmaking/server administration.
-- Replacing Quake Live navigation, aiming or shooting with a custom AI engine.
-- Direct Director control of bot aim/fire.
-- Hidden difficulty cheats that invalidate player skill.
-- Destructive user configuration changes.
+## Encounter Director roadmap
 
-### Engine ownership
+See `docs/DIRECTOR_DESIGN.md` for the governing design and fairness laws.
 
-- Quake Live owns physics, navigation, aiming, shooting, weapons and collision.
-- `solo_controller` owns objective lifecycle and enemy ownership.
-- `solo_arcade` adapts Quake events to the mode runtime.
-- The Director observes and recommends bounded encounter actions; it **does not become a second lifecycle state machine**.
+### D0 — Observe and explain — IMPLEMENTED
 
-## Mission meeting outcome — Director
+- [x] Pure deterministic mode-aware Director core in `solo_engine/plugins/solo_director.py`.
+- [x] Live adapter in `solo_engine/plugins/director_runtime.py`.
+- [x] Low-frequency encounter observation rather than per-frame decision churn.
+- [x] Measure pressure, alive/engaged/idle/far enemies, human health/armor and recent damage exchange.
+- [x] Append explainable telemetry to `solo_runtime/director.jsonl` with bounded rotation.
+- [x] Include compact Director state in `!run` diagnostics.
+- [x] Tests for pressure, severe-damage recovery window, recent contact and profile validity.
 
-The intended mental model is: **the Director is playing the opposing pieces against the human.**
+### D1 — Recover non-contributing bots — IMPLEMENTED, NARROW AUTHORITY
 
-It may decide:
+Active recovery currently allowed only in:
 
-- which bot roles make up an encounter;
-- when replacements arrive;
-- how many enemies should meaningfully pressure at once;
-- what combat loadout a role receives;
-- whether a bot is idle/non-contributing and needs recovery;
-- when a player should receive a brief recovery window;
-- how pressure should rise as a mode progresses;
-- how each difficulty preset changes encounter pressure.
+- [x] Horde
+- [x] Gun Game
+- [x] Speedrun Combat
 
-It may not:
+Safety contract:
 
-- aim or shoot for a bot;
-- grant impossible reactions;
-- teleport a hostile bot directly into unavoidable danger;
-- silently multiply damage because the player is doing well;
-- hard-counter every successful player weapon/build;
-- increase every difficulty axis at once.
+- [x] objective must be ACTIVE;
+- [x] total pressure must be below target floor;
+- [x] candidate must be far and idle beyond mode threshold;
+- [x] candidate cannot already have taken player damage;
+- [x] recovery cooldown prevents churn;
+- [x] remove objective ownership before kick/replacement so recovery never counts as progression;
+- [x] regression test proves Horde remains ACTIVE and enemy count returns to expected population.
 
-Difficulty priority:
+Not implemented: teleporting bots onto/near the player.
 
-1. encounter quality;
-2. pacing;
-3. useful proximity;
-4. role composition;
-5. simultaneous pressure;
-6. native bot skill/health/armor only within explicit caps.
+### D2 — Role composition — INITIAL IMPLEMENTATION
 
-## Backward plan from DONE
+Every scripted mode has a Director profile and seeded role mix.
 
-1. Immediately before release: representative live mode families pass target gameplay quality gates and no open high-severity Director/lifecycle risk remains.
-2. Before that: all 15 Director profiles pass simulation and fairness-law tests; difficulty presets operate through pressure bands.
-3. Before that: common Director pressure budget, telemetry, idle recovery, roles and recovery windows are proven in Horde/Gun Game/Speedrun.
-4. Before that: the current live lifecycle repair is confirmed on Mint and all visible modes stop falsely terminating at startup.
-5. Before that: repository/package/runtime bootstrap remains green and reproducible. **VERIFIED.**
+- [x] Chaser
+- [x] Gunner
+- [x] Marksman
+- [x] Bruiser
+- [x] Skirmisher
+- [x] Berserker
+- [x] Target
+- [x] Boss
 
-## Immediate wave — stabilize live gameplay
+Roles currently influence bounded loadout/health/armor identity while native Quake AI still performs actual combat behavior.
 
-- [x] `QLL-LIVE-001` — Capture first real target-machine result: QLDS/shinqlx launches; Horde plays; other modes can terminate immediately; Horde AI feels passive.
-- [x] `QLL-LIVE-002` — Ignore human death events before objective phase ACTIVE.
-- [x] `QLL-LIVE-003` — Give every scripted bot a combat-ready loadout when map pickups are disabled.
-- [x] `QLL-LIVE-004` — Add regression tests for startup-death and Horde combat-readiness symptoms; clean CI run `33126587095` PASS with 57 tests.
-- [ ] `QLL-LIVE-005` — Confirm on target Mint that Boss Rush/Wipeout/One Life/Arena no longer terminate at startup.
-- [ ] `QLL-LIVE-006` — Confirm Horde bots now engage materially better; record remaining passivity as Director telemetry requirements rather than ad-hoc AI cvar tweaks.
+- [x] role selection reproducible from seed/objective/spawn order;
+- [x] Marksman weighting kept low in pressure-heavy profiles;
+- [x] boss/trial-specific existing loadouts override generic role loadout where appropriate;
+- [x] runtime regression verifies Horde bots receive a valid role and matching armed loadout.
 
-## Director first wave
+### D3 — Adaptive pressure budget — NEXT
 
-- [ ] `QLL-D001` — Add observation-only Director telemetry; no gameplay changes.
-- [ ] `QLL-D002` — Add deterministic pressure model and diagnostics: meaningful-combat gaps, engaged estimate, player damage state, bot contribution/idle time.
-- [ ] `QLL-D003` — Add idle/non-contributing recovery for Horde, Gun Game and Speedrun Combat.
-- [ ] `QLL-D004` — Add role/loadout system: Chaser, Gunner, Marksman, Bruiser, Skirmisher, Berserker, Target/Boss.
-- [ ] `QLL-D005` — Add pressure-budget pacing and recovery windows with fairness-law tests.
-- [ ] `QLL-D006` — Convert difficulty presets from mostly skill/intensity values into pressure-band profiles.
+Build only after D0 telemetry from real gameplay is reviewed.
 
-## Director mode matrix
+Planned authority:
 
-| Mode | Director profile | Primary job |
-| --- | --- | --- |
-| Horde | Hunt Director | Make a wave actively hunt while avoiding unfair dogpiles |
-| Arena Run | Roguelite Director | Shape rounds around theme/build without hard-counter cheating |
-| Gun Game | Flow Director | Keep reachable fights flowing through the weapon ladder |
-| Boss Rush | Duel Director | Give bosses distinct pressure rhythms rather than raw stat inflation |
-| Wipeout Solo | Squad Director | Coordinate a readable squad while preserving an achievable wipe window |
-| Gauntlet | Trial Director | Make each weapon/stage produce its intended combat shape |
-| Last Stand | Siege Director | Escalate pressure through composition/pacing |
-| One Life | Tension Director | Keep one-life stakes high without lethal difficulty spikes |
-| Bounty Hunt | Escort Director | Make the target reachable but meaningfully protected |
-| Rocket Tag | Chase Director | Maintain mobile rocket-range pursuit |
-| Movement Hunter | Pursuit Director | Force movement through pursuit, not perfect enemy accuracy |
-| Predator | Swarm Director | Preserve power fantasy with intelligent swarm pressure |
-| Accuracy Trial | Target Director | Supply useful moving targets with low incoming lethality |
-| Speedrun Combat | Feed Director | Eliminate dead time so execution determines speed |
-| Random Loadout | Improvisation Director | Create varied fights without counter-picking the random loadout |
+- [ ] tune replacement/reinforcement timing around pressure band;
+- [ ] bounded simultaneous-engager targets;
+- [ ] recovery windows after severe incoming damage;
+- [ ] composition adjustments between objectives/waves, not abrupt mid-firefight counter-picks;
+- [ ] performance trend smoothing across multiple encounters rather than reaction to one kill/death;
+- [ ] difficulty presets primarily alter encounter-management bounds before native skill.
 
-Full behavior contract: `docs/DIRECTOR_DESIGN.md`.
+Explicitly prohibited for D3:
 
-## Director phases
+- hidden dynamic damage buffs;
+- direct aim/fire control;
+- hostile teleport into immediate danger;
+- replacing damaged enemies to restore health;
+- instant counter-picking of Arena upgrades/weapons.
 
-### Phase D0 — Measure before adapting
+### D4 — Mode-specific Director identities
 
-- [ ] Implement low-frequency observation state.
-- [ ] Log pressure inputs without changing behavior.
-- [ ] Establish Horde/Gun Game/Speedrun baseline traces.
+- [x] Horde — Hunt profile exists
+- [x] Arena Run — Roguelite profile exists
+- [x] Gun Game — Flow profile exists
+- [x] Boss Rush — Duel profile exists
+- [x] Wipeout — Squad profile exists
+- [x] Gauntlet — Trial profile exists
+- [x] Last Stand — Siege profile exists
+- [x] One Life — Tension profile exists
+- [x] Bounty Hunt — Escort profile exists
+- [x] Rocket Tag — Chase profile exists
+- [x] Movement Hunter — Pursuit profile exists
+- [x] Predator — Swarm profile exists
+- [x] Accuracy Trial — Target profile exists
+- [x] Speedrun Combat — Feed profile exists
+- [x] Random Loadout — Improvisation profile exists
+- [ ] tune each profile from telemetry/live evidence rather than fixed guesses.
 
-**Gate:** a passive Horde match can be explained in terms of contact gaps, idle contribution and distance rather than subjective guessing alone.
+### D5 — Difficulty profiles
 
-### Phase D1 — Engagement floor
+- [x] Easy/Normal/Hard/Nightmare pressure-profile structure exists.
+- [x] tests verify encounter pressure changes before native bot skill.
+- [ ] calibrate target pressure bands from real sessions.
+- [ ] expose useful Director difficulty explanation in UI/diagnostics.
 
-- [ ] Detect idle/non-contributing bots.
-- [ ] Recover through replacement first.
-- [ ] Investigate relocation only if safe placement can be proven.
-- [ ] Add per-profile preferred engagement/distance bands.
+### D6 — Live quality gate
 
-**Gate:** simulated and live Horde has materially less wandering, with no objective corruption or hostile teleport unfairness.
+Representative live families:
 
-### Phase D2 — Roles and composition
+- [ ] Horde — hunting/contact quality
+- [ ] Arena Run — build/theme fairness
+- [ ] Gun Game — continuous reachable fights
+- [ ] Boss Rush — distinct readable duel pressure
+- [ ] Movement Hunter — pursuit without laser aim
+- [ ] Accuracy Trial — useful targets without excessive lethality
 
-- [ ] Implement shared bot role contracts.
-- [ ] Add composition budgets and role caps.
-- [ ] Progress Horde through role complexity before bot-skill inflation.
-- [ ] Give Boss/Gauntlet/Accuracy explicit role rules.
+Then sample remaining profiles before merge.
 
-**Gate:** a harder encounter can be generated while holding native bot skill constant.
+## MAPS checkpoints
 
-### Phase D3 — Pressure budget
-
-- [ ] Estimate current pressure.
-- [ ] Define target pressure bands per mode/difficulty.
-- [ ] Add recent-damage smoothing and short recovery windows.
-- [ ] Change one major difficulty axis at a time.
-
-**Gate:** dominant and struggling simulated players produce different pacing without hidden damage, aim or impossible reaction changes.
-
-### Phase D4 — All-mode profiles
-
-- [ ] Wire every scripted Solo mode to its profile.
-- [ ] Add mode-specific dominant/struggling/idle/stale-callback tests.
-- [ ] Preserve objective state machine as sole lifecycle owner.
-
-**Gate:** every visible Solo mode has a tested Director contract.
-
-### Phase D5 — Difficulty calibration
-
-- [ ] Easy/Normal/Hard/Nightmare map to pressure targets and caps.
-- [ ] Native bot skill becomes a bounded secondary knob.
-- [ ] Diagnostics report average engaged count, combat gaps, intervention reasons and time outside pressure band.
-
-**Gate:** difficulty levels feel distinct primarily because the encounter is managed differently—not because enemies secretly become superhuman.
-
-### Phase D6 — Live quality gate
-
-Representative live suite:
-
-- [ ] Horde — engagement and wave pressure.
-- [ ] Arena Run — build/theme adaptation and bosses.
-- [ ] Gun Game — encounter flow.
-- [ ] Boss Rush — readable duel pressure.
-- [ ] Movement Hunter — pursuit without laser aim.
-- [ ] Accuracy Trial — useful targets rather than lethal opponents.
-
-Then sample remaining modes before release.
-
-**Gate:** bots feel engaged, mode-appropriate and appropriately difficult without being overpowered; no fairness law is violated.
-
-## Verification requirements
-
-Every Director profile must simulate at least:
-
-- dominant player streak;
-- severe incoming damage burst;
-- sustained low-health player;
-- idle/non-contributing bot;
-- extremely distant bot;
-- enemy death during PREPARING;
-- queued Director intervention across objective transition;
-- map change with pressure state present;
-- mode completion while an intervention is queued;
-- each difficulty preset.
-
-Every delayed Director action uses the same generation/token validity boundary as objective callbacks.
-
-## Risk-driven checkpoints
-
-### Checkpoint 1 — lifecycle architecture
+### Director Checkpoint A — architecture
 
 - Decision: CONTINUE.
-- Evidence: package import, ownership, early-kill spawning, team sandbox and generation guards pass simulation.
+- Evidence: Director design/fairness laws and all 15 profiles defined.
 
-### Checkpoint 2 — repository/package
+### Director Checkpoint B — D0/D1/D2 integration
 
 - Decision: CONTINUE.
-- Evidence: installable product, archive/source equality and CI are green.
+- Evidence: `solo_director.py`, `director_runtime.py`, production `solo_arcade.py` integration, Director pure tests, runtime recovery tests, clean full-product CI run `33173627036` PASS.
+- Reason: observation, explainability, role identity and the safest active recovery behavior work without weakening existing mode lifecycle tests.
+- Constraint: D3 authority remains intentionally limited until real `director.jsonl` evidence is reviewed.
 
-### Checkpoint 3 — automated runtime readiness
+## Immediate next action
 
-- Previous decision: CONTINUE to release.
-- New decision: CHANGE.
-- Evidence: real gameplay showed that successful readiness does not prove mode correctness or bot quality.
-- Consequence: target gameplay quality is now a formal DONE gate.
-
-### Checkpoint 4 — first live gameplay repair
-
-- Evidence: live report + commit `062fb46a38fd08fcbba8a4b8bab251abf179ff10` + clean CI run `33126587095` with 57 passing tests.
-- Decision: CONTINUE to target retest.
-- Re-plan if: modes still terminate immediately or pre-ACTIVE death is not the live cause.
-
-### Checkpoint 5 — Director observation
-
-- Decision pending.
-- CONTINUE if telemetry can explain engagement failures without invasive bot control.
-- CHANGE if useful pressure cannot be inferred reliably from available QLDS/shinqlx signals.
-
-### Checkpoint 6 — Director engagement
-
-- Decision pending.
-- CONTINUE if idle recovery and composition measurably improve contact without unfair interventions.
-- CHANGE if Director intervention creates obvious teleporting, dogpiling, lifecycle corruption or rubber-banding.
-
-## Release rule
-
-PR #1 stays draft. The product is not DONE because QLDS starts or because CI is green. Release requires both software correctness **and** representative live gameplay evidence that the modes and their Director profiles deliver the intended one-player experience.
+Run the Director build on real Mint, especially Horde. Collect `~/.local/share/quake-live-launcher/solo_runtime/director.jsonl` along with the normal Solo log. Use that evidence to calibrate D3 pressure bands and engagement thresholds rather than increasing bot skill blindly.
