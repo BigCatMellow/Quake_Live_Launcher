@@ -193,6 +193,12 @@ class solo_directed(solo_arcade):
             )
         except Exception:
             pass
+        # Bump the existing controller generation before clearing the old
+        # encounter. Reusing this controller keeps generations monotonic across
+        # hot-loaded modes, so a delayed callback from Horde can never collide
+        # with a freshly-created controller generation in Gun Game (or vice
+        # versa).
+        self.controller.finish()
         self.clear_all_bots()
 
         self.session = dict(session)
@@ -210,7 +216,7 @@ class solo_directed(solo_arcade):
         self.ground_dash_hop = float(self.movement.get("ground_dash_hop", 155))
         self.base_dash_charges = max(1, min(3, int(self.movement.get("dash_charges", 1))))
 
-        self.controller = SoloController(self.mode)
+        self.controller.mode = self.mode
         self.horde = HordeState(self.seed) if self.mode == "horde" else None
         self.gun_game = GunGameState() if self.mode == "gun_game" else None
         self.run = None
