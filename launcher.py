@@ -27,6 +27,7 @@ globals()["__name__"] = _ORIGINAL_NAME
 APP_VERSION = "5.0-alpha-hotload1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
+SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"
 
 
 def _atomic_json(path: Path, payload: dict) -> None:
@@ -37,8 +38,20 @@ def _atomic_json(path: Path, payload: dict) -> None:
 
 
 def solo_hot_switch_available() -> bool:
-    """True when an already-running local Solo plugin can accept a match handoff."""
-    return bool(solo_server_pid() and solo_plugin_ready())
+    """True only when this exact running server advertises hot-load protocol v1."""
+    pid = solo_server_pid()
+    if not pid or not solo_plugin_ready():
+        return False
+    try:
+        payload = json.loads(SOLO_HOTLOAD_READY_FILE.read_text(encoding="utf-8"))
+        return (
+            isinstance(payload, dict)
+            and int(payload.get("protocol", 0)) == 1
+            and int(payload.get("pid", -1)) == int(pid)
+            and bool(payload.get("ready"))
+        )
+    except Exception:
+        return False
 
 
 def solo_match_status() -> dict:
@@ -162,6 +175,9 @@ def launch_solo_mode(
         pid = solo_server_pid()
         if not solo_plugin_ready(mode):
             status(f"ERROR: server returned success but plugin readiness handshake is missing or for the wrong mode ({mode}).")
+            return
+        if not solo_hot_switch_available():
+            status("ERROR: server is healthy but did not advertise the hot-load v1 capability handshake.")
             return
         status(f"Solo server verified; PID={pid}; UDP27960={solo_udp_listening()}; plugin={solo_plugin_ready_payload()}.")
         if quake_running():
