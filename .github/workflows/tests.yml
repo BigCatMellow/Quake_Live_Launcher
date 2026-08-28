@@ -67,7 +67,7 @@ jobs:
           spec=importlib.util.spec_from_file_location('qll_installed_launcher',path)
           module=importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
-          assert module.APP_VERSION == '5.0-alpha', module.APP_VERSION
+          assert module.APP_VERSION == '5.0-alpha-hotload1', module.APP_VERSION
           print('installed launcher import OK:', module.APP_VERSION)
           PY
           mkdir -p "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime"
