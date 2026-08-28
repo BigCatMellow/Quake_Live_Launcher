@@ -283,7 +283,7 @@ class solo_directed(solo_arcade):
         player.tell("^6DIRECTOR:^7 " + runtime.summary())
         roles = {}
         for track in runtime.director.tracks.values():
-            roles[track.role] = roles.get(role, 0) + 1
+            roles[track.role] = roles.get(track.role, 0) + 1
         if roles:
             player.tell("^7Roles: " + ", ".join(f"{name} x{count}" for name, count in sorted(roles.items())))
         if runtime.director.should_hold_reinforcements(runtime.now()):
