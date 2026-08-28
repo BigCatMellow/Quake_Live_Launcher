@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import json
 import os
 import time
@@ -17,6 +18,16 @@ ROLE_PRESSURE = {
     "berserker": 1.20,
     "target": 0.72,
     "boss": 1.00,
+}
+ROLE_CAPS = {
+    "chaser": 3,
+    "gunner": 2,
+    "marksman": 1,
+    "bruiser": 2,
+    "skirmisher": 3,
+    "berserker": 1,
+    "target": 2,
+    "boss": 1,
 }
 
 
@@ -63,14 +74,16 @@ class DirectorLearning:
         self.action_serial = 0
         self.finalized = False
         self.last_snapshot = None
+        self.live_pressure_bias = 0.0
         self._decay_old_model()
         self._session_event("session_start", difficulty=self.difficulty, seed=self.seed)
 
     def pressure_shift(self) -> float:
         mode = self.player.get("modes", {}).get(self.mode, {})
-        if int(mode.get("objectives", 0)) < 3:
-            return 0.0
-        return clamp(float(mode.get("pressure_shift", 0.0)), -6.0, 6.0)
+        persistent = 0.0
+        if int(mode.get("objectives", 0)) >= 3:
+            persistent = float(mode.get("pressure_shift", 0.0))
+        return clamp(persistent + self.live_pressure_bias, -6.0, 6.0)
 
     def begin_objective(self, now: float) -> None:
         self.finish_objective(float(now), reason="next_objective")
@@ -83,7 +96,7 @@ class DirectorLearning:
             "severe_ticks": 0,
             "damage_taken_sum": 0.0,
             "damage_dealt_sum": 0.0,
-            "roles_seen": set(),
+            "composition_ticks": {},
         }
         self._session_event("objective_start", pressure_shift=self.pressure_shift())
 
@@ -91,6 +104,7 @@ class DirectorLearning:
         self.last_snapshot = snapshot
         if self.objective is None:
             self.begin_objective(float(now))
+        role_list = [str(role) for role in roles if role]
         obj = self.objective
         if obj is not None:
             obj["ticks"] += 1
@@ -100,8 +114,10 @@ class DirectorLearning:
             obj["severe_ticks"] += int(float(snapshot.recent_damage_taken) >= 70.0 or int(snapshot.player_health) + int(snapshot.player_armor) <= 45)
             obj["damage_taken_sum"] += float(snapshot.recent_damage_taken)
             obj["damage_dealt_sum"] += float(snapshot.recent_damage_dealt)
-            obj["roles_seen"].update(str(role) for role in roles if role)
-        return self.evaluate_pending(float(now), snapshot, roles)
+            key = composition_key(role_list)
+            ticks = obj["composition_ticks"]
+            ticks[key] = int(ticks.get(key, 0)) + 1
+        return self.evaluate_pending(float(now), snapshot, role_list)
 
     def record_role_outcome(self, role: str, damage_dealt: float, damage_received: float, killed_by_human: bool) -> None:
         role = str(role)
@@ -131,6 +147,7 @@ class DirectorLearning:
             return base_role
 
         current = list(current_roles)
+        counts = Counter(current)
         target_direction = 0
         if snapshot is not None:
             if float(snapshot.pressure) < float(snapshot.pressure_low) - 4.0:
@@ -142,6 +159,8 @@ class DirectorLearning:
         comps = self.playbook.get("modes", {}).get(self.mode, {}).get("compositions", {})
 
         def score(role: str) -> float:
+            if counts.get(role, 0) >= ROLE_CAPS.get(role, 99):
+                return -10.0
             value = 0.0
             row = role_stats.get(role, {})
             attempts = int(row.get("attempts", 0))
@@ -163,6 +182,8 @@ class DirectorLearning:
         scored = sorted(((score(role), role) for role in allowed), reverse=True)
         best_score, best_role = scored[0]
         base_score = next(value for value, role in scored if role == base_role)
+        if best_score <= -9.0:
+            return base_role
         if best_role != base_role and best_score - base_score >= 0.08:
             return best_role
         return base_role
@@ -235,6 +256,18 @@ class DirectorLearning:
             else:
                 success = not danger and (float(low) <= after <= float(high) or improvement >= 5.0)
             score = clamp(0.5 + improvement / 45.0 - (0.35 if danger else 0.0), 0.0, 1.0)
+
+            # Fast correction is session-local. Dangerous interventions make the
+            # Director back off immediately; ineffective low-pressure moves let
+            # it raise pressure slightly. Persistent changes still require
+            # repeated objective evidence below.
+            if danger:
+                self.live_pressure_bias = clamp(self.live_pressure_bias - 1.5, -4.0, 4.0)
+            elif not success and after < float(low):
+                self.live_pressure_bias = clamp(self.live_pressure_bias + 0.75, -4.0, 4.0)
+            elif success:
+                self.live_pressure_bias *= 0.80
+
             evaluation = {
                 "action_id": action_id,
                 "kind": action_kind,
@@ -247,6 +280,7 @@ class DirectorLearning:
                 "damage_taken_after": float(snapshot.recent_damage_taken),
                 "composition_after": composition_key(roles),
                 "execution": experiment.get("execution", "unknown"),
+                "live_pressure_bias": self.live_pressure_bias,
             }
             evaluations.append(evaluation)
             self._learn_from_experiment(experiment, evaluation)
@@ -270,7 +304,8 @@ class DirectorLearning:
         avg_taken = float(obj["damage_taken_sum"]) / ticks
         avg_dealt = float(obj["damage_dealt_sum"]) / ticks
         score = clamp(1.0 - low_fraction * 0.45 - high_fraction * 0.35 - severe_fraction * 0.65, 0.0, 1.0)
-        key = composition_key(obj["roles_seen"])
+        composition_ticks = obj.get("composition_ticks", {})
+        key = max(composition_ticks.items(), key=lambda item: item[1])[0] if composition_ticks else "none"
         self._update_composition(key, score, avg_pressure, severe_fraction)
         self._update_player_objective(avg_pressure, low_fraction, high_fraction, severe_fraction, avg_taken, avg_dealt, duration)
         self._session_event(
