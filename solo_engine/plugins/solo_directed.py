@@ -8,6 +8,7 @@ state, change map, and start the next mode without restarting the client.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 
@@ -44,6 +45,7 @@ except ImportError:
 
 MATCH_REQUEST_FILE = RUNTIME_DIR / "match_request.json"
 MATCH_STATUS_FILE = RUNTIME_DIR / "match_status.json"
+HOTLOAD_READY_FILE = RUNTIME_DIR / "hotload_ready.json"
 
 
 class solo_directed(solo_arcade):
@@ -56,7 +58,32 @@ class solo_directed(solo_arcade):
         self.next_match_request_poll = 0.0
         self.next_training_assert = 0.0
         self._force_training_contract()
+        self._write_hotload_ready()
         self.add_command("director", self.cmd_director)
+
+    # ---------- hot-load capability handshake ----------
+    def _write_hotload_ready(self):
+        try:
+            RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "ready": True,
+                "protocol": 1,
+                "pid": os.getpid(),
+                "mode": self.mode,
+                "time": time.time(),
+            }
+            temp = HOTLOAD_READY_FILE.with_name(HOTLOAD_READY_FILE.name + ".tmp")
+            temp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            temp.replace(HOTLOAD_READY_FILE)
+        except Exception as exc:
+            self._log(f"could not write hot-load readiness: {exc}")
+
+    def handle_unload(self, plugin):
+        try:
+            HOTLOAD_READY_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return super().handle_unload(plugin)
 
     # ---------- multiplayer-forfeit guard ----------
     def _force_training_contract(self):
@@ -232,6 +259,7 @@ class solo_directed(solo_arcade):
         self.next_training_assert = 0.0
         self._force_training_contract()
         self._write_ready(True)
+        self._write_hotload_ready()
         self._write_match_status("loading", request_id)
         self.msg(f"^6SOLO:^7 loading {self.mode.replace('_', ' ').upper()}…")
         self._log(f"hot match switch id={request_id} mode={self.mode} map={map_name}")
@@ -255,7 +283,7 @@ class solo_directed(solo_arcade):
         player.tell("^6DIRECTOR:^7 " + runtime.summary())
         roles = {}
         for track in runtime.director.tracks.values():
-            roles[track.role] = roles.get(track.role, 0) + 1
+            roles[track.role] = roles.get(role, 0) + 1
         if roles:
             player.tell("^7Roles: " + ", ".join(f"{name} x{count}" for name, count in sorted(roles.items())))
         if runtime.director.should_hold_reinforcements(runtime.now()):
