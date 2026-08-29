@@ -14,6 +14,7 @@ scripted Solo Engine designed around a single explicit lifecycle.
 - Scripted Solo modes powered by a local Quake Live Dedicated Server + shinqlx.
 - Solo movement options: enhanced air control plus left/right ground dodge-hop and air dash.
 - Detailed setup/start/server diagnostics.
+- Optional automatic post-game GitHub debug capture for the repository owner.
 
 ## Install/update the launcher
 
@@ -166,6 +167,27 @@ Logs live under:
 
 ```text
 ~/.local/share/quake-live-launcher/logs/
+```
+
+### Automatic post-game GitHub debug capture
+
+When a Solo-launched Quake client closes, the launcher starts a detached watcher that
+captures the current session, plugin/hot-load state, server log and minqlx log. It
+always saves the report locally. If GitHub CLI (`gh`) is installed and authenticated
+as the repository owner (`BigCatMellow`), it also creates a privacy-scrubbed issue in
+`BigCatMellow/Quake_Live_Launcher`. Home-directory paths, hostname and obvious GitHub
+token patterns are redacted before upload.
+
+One-time GitHub CLI authentication:
+
+```bash
+gh auth login
+```
+
+Upload success/failure is recorded in:
+
+```text
+~/.local/share/quake-live-launcher/solo_runtime/last_github_debug.json
 ```
 
 A normal Solo launch is considered healthy only when all of these are true:
