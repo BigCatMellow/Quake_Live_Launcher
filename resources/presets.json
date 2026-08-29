@@ -1,0 +1,708 @@
+{
+  "Normal Quake Live": {
+    "normal_start": true,
+    "description": "Starts Quake Live normally at its own menu. No launcher preset is applied."
+  },
+  "Free For All": {
+    "factory": "ffa",
+    "map_types": [
+      "ffa"
+    ],
+    "description": "Standard every-player-for-themselves deathmatch with normal pickups.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "campgrounds",
+    "maps": [
+      "campgrounds",
+      "almostlost",
+      "asylum",
+      "brimstoneabbey",
+      "hearth",
+      "hellsgate",
+      "longestyard",
+      "hiddenfortress"
+    ]
+  },
+  "Instagib FFA": {
+    "factory": "iffa",
+    "map_types": [
+      "ffa"
+    ],
+    "description": "Instagib Free For All: railgun/gauntlet rules with one-shot rail kills and no normal item game.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "campgrounds",
+    "maps": [
+      "campgrounds",
+      "almostlost",
+      "asylum",
+      "brimstoneabbey",
+      "hearth",
+      "hellsgate",
+      "longestyard"
+    ]
+  },
+  "Quad Hog": {
+    "factory": "quadhog",
+    "map_types": [
+      "ffa"
+    ],
+    "description": "FFA variant built around controlling a special persistent Quad Damage powerup.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "asylum",
+      "brimstoneabbey",
+      "almostlost",
+      "hearth"
+    ]
+  },
+  "Duel": {
+    "factory": "duel",
+    "map_types": [
+      "duel"
+    ],
+    "description": "Standard 1v1 Duel. The launcher spawns at most one bot.",
+    "default_bots": 1,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "bloodrun",
+      "aerowalk",
+      "furiousheights",
+      "lostworld",
+      "toxicity",
+      "almostlost",
+      "campgrounds"
+    ]
+  },
+  "Team Deathmatch": {
+    "factory": "tdm",
+    "map_types": [
+      "tdm"
+    ],
+    "description": "Standard two-team deathmatch with pickups and map control.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "deepinside",
+      "dreadfulplace",
+      "purgatory",
+      "retribution",
+      "theedge"
+    ]
+  },
+  "Clan Arena": {
+    "factory": "ca",
+    "map_types": [
+      "ca"
+    ],
+    "description": "Round-based team fighting. Players spawn armed; no mid-round respawn after elimination.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "asylum",
+      "hiddenfortress",
+      "overkill",
+      "quarantine",
+      "repent",
+      "theatreofpain",
+      "trinity"
+    ]
+  },
+  "Freeze Tag": {
+    "factory": "ft",
+    "map_types": [
+      "ft"
+    ],
+    "description": "Team mode where defeated players freeze and teammates can thaw them.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "almostlost",
+      "campgrounds",
+      "deepinside",
+      "grimdungeons",
+      "hiddenfortress",
+      "limbus",
+      "lostworld",
+      "retribution",
+      "theedge"
+    ]
+  },
+  "Instagib Freeze Tag": {
+    "factory": "ift",
+    "map_types": [
+      "ft"
+    ],
+    "description": "Freeze Tag using Instagib railgun rules.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "almostlost",
+      "campgrounds",
+      "deepinside",
+      "grimdungeons",
+      "hiddenfortress",
+      "limbus",
+      "lostworld",
+      "retribution",
+      "theedge"
+    ]
+  },
+  "Capture the Flag": {
+    "factory": "ctf",
+    "map_types": [
+      "ctf"
+    ],
+    "description": "Standard two-flag Capture the Flag.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "japanesecastles",
+      "spidercrossings",
+      "ironworks",
+      "infinity",
+      "courtyard",
+      "siberia",
+      "gospelcrossings",
+      "shiningforces"
+    ]
+  },
+  "Instagib CTF": {
+    "factory": "ictf",
+    "map_types": [
+      "ctf"
+    ],
+    "description": "Capture the Flag with Instagib railgun rules.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "japanesecastles",
+      "spidercrossings",
+      "ironworks",
+      "infinity",
+      "courtyard",
+      "siberia",
+      "gospelcrossings",
+      "shiningforces"
+    ]
+  },
+  "1-Flag CTF": {
+    "factory": "oneflag",
+    "map_types": [
+      "oneflag"
+    ],
+    "description": "Both teams fight for one neutral flag and score it at the enemy base.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "courtyard",
+      "inner-sanctums",
+      "ironworks",
+      "spidercrossings"
+    ]
+  },
+  "Harvester": {
+    "factory": "har",
+    "map_types": [
+      "har"
+    ],
+    "description": "Team Arena mode: collect skulls generated by frags and deliver them to the enemy base.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "courtyard",
+      "inner-sanctums",
+      "ironworks",
+      "spidercrossings"
+    ]
+  },
+  "Domination": {
+    "factory": "dom",
+    "map_types": [
+      "dom"
+    ],
+    "description": "Teams capture and hold domination points to generate score.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "blackcathedral",
+      "brimstoneabbey",
+      "chemicalreaction",
+      "corrosion",
+      "courtyard",
+      "intervention",
+      "leviathan",
+      "overkill",
+      "purgatory",
+      "trinity"
+    ]
+  },
+  "Attack & Defend": {
+    "factory": "ad",
+    "map_types": [
+      "ad"
+    ],
+    "description": "Round-based offense/defense mode built around attacking or protecting the enemy flag.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "courtyard",
+      "ironworks",
+      "spidercrossings",
+      "japanesecastles"
+    ]
+  },
+  "Red Rover": {
+    "factory": "rr",
+    "map_types": [
+      "rr",
+      "ffa",
+      "ca"
+    ],
+    "description": "Team conversion mode: a fragged opponent joins the team that killed them.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "asylum",
+      "overkill",
+      "quarantine",
+      "trinity"
+    ]
+  },
+  "Infected": {
+    "factory": "infected",
+    "map_types": [
+      "rr",
+      "ffa",
+      "ca"
+    ],
+    "description": "Infected/horde-style Red Rover derivative included with Quake Live.",
+    "default_bots": 7,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "asylum",
+      "overkill",
+      "quarantine",
+      "trinity"
+    ]
+  },
+  "Race": {
+    "factory": "race",
+    "map_types": [
+      "race"
+    ],
+    "description": "Movement/time-trial mode on maps that contain Quake Live race checkpoints.",
+    "default_bots": 0,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": []
+  },
+  "LG Aim Trainer": {
+    "factory": "lgtrainer",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Sustained Lightning Gun tracking: infinite LG, very high health/armor, almost no LG knockback, no pickups. Slash is the first target.",
+    "default_bots": 1,
+    "default_skill": 5,
+    "default_map": "thunderstruck",
+    "maps": [
+      "thunderstruck",
+      "campgrounds",
+      "almostlost",
+      "asylum",
+      "brimstoneabbey",
+      "hellsgate"
+    ]
+  },
+  "LG Combat Practice": {
+    "factory": "lgcombat",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "LG-only combat transfer practice with 200 health, normal LG knockback, infinite ammo, and no pickups.",
+    "default_bots": 1,
+    "default_skill": 5,
+    "default_map": "thunderstruck",
+    "maps": [
+      "thunderstruck",
+      "campgrounds",
+      "almostlost",
+      "asylum",
+      "brimstoneabbey",
+      "hellsgate"
+    ]
+  },
+  "Rail Aim Trainer": {
+    "factory": "railtrainer",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Railgun-only aim practice with infinite ammo and high target durability.",
+    "default_bots": 3,
+    "default_skill": 5,
+    "default_map": "campgrounds",
+    "maps": [
+      "campgrounds",
+      "almostlost",
+      "asylum",
+      "longestyard",
+      "hellsgate"
+    ]
+  },
+  "Plasma Tracking Trainer": {
+    "factory": "plasmatrainer",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Plasma Gun-only projectile tracking and leading practice with infinite ammo.",
+    "default_bots": 2,
+    "default_skill": 5,
+    "default_map": "campgrounds",
+    "maps": [
+      "campgrounds",
+      "almostlost",
+      "asylum",
+      "brimstoneabbey"
+    ]
+  },
+  "Rocket Combat Practice": {
+    "factory": "rockettrainer",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Rocket Launcher-only combat practice with infinite ammo and extra health.",
+    "default_bots": 2,
+    "default_skill": 5,
+    "default_map": "campgrounds",
+    "maps": [
+      "campgrounds",
+      "almostlost",
+      "asylum",
+      "brimstoneabbey",
+      "hellsgate"
+    ]
+  },
+  "Unholy Trinity": {
+    "factory": "unholytrinity",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Rocket Launcher + Lightning Gun + Railgun. Infinite ammo, no weapon/ammo pickups, fast weapon switching.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "asylum",
+      "overkill",
+      "trinity",
+      "hiddenfortress",
+      "almostlost"
+    ]
+  },
+  "Hot Rockets": {
+    "factory": "hotrockets",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Rocket-only arena: heavy direct/splash damage, fast reload, infinite ammo and reduced interruption from pickups.",
+    "default_bots": 4,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "almostlost",
+      "campgrounds",
+      "thunderstruck",
+      "overkill",
+      "quarantine",
+      "asylum"
+    ]
+  },
+  "Rocket Mayhem": {
+    "factory": "rocketmayhem",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Fast rockets, huge splash/knockback, low gravity and faster movement. Deliberately chaotic.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "thunderstruck",
+      "hellsgate",
+      "spacechamber",
+      "longestyard",
+      "almostlost",
+      "overkill"
+    ]
+  },
+  "All Guns FFA": {
+    "factory": "allguns",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Spawn fully armed with infinite ammo and fight immediately; no weapon or ammo control required.",
+    "default_bots": 6,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "asylum",
+      "overkill",
+      "trinity",
+      "retribution",
+      "grimdungeons"
+    ]
+  },
+  "Knockout": {
+    "factory": "knockout",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "High knockback, low weapon damage and space-map friendly rules. Win by throwing opponents around as much as shooting them.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "longestyard",
+      "spacechamber",
+      "hellsgate",
+      "beyondreality",
+      "thunderstruck"
+    ]
+  },
+  "Turbo Quake": {
+    "factory": "turboquake",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Faster movement, stronger air control, bunny-hop physics and near-instant weapon switching.",
+    "default_bots": 6,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "aerowalk",
+      "hektik",
+      "toxicity",
+      "campgrounds",
+      "lostworld",
+      "purgatory"
+    ]
+  },
+  "Glass Cannon": {
+    "factory": "glasscannon",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Full arsenal, only 50 health and no starting armor. Very fast, punishing fights.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "asylum",
+      "almostlost",
+      "campgrounds",
+      "hellsgate",
+      "longestyard"
+    ]
+  },
+  "Juggernaut Arena": {
+    "factory": "juggernaut",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Full arsenal, 400 health + 200 armor, infinite ammo and sustained fights.",
+    "default_bots": 4,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "trinity",
+      "overkill",
+      "grimdungeons",
+      "campgrounds",
+      "demonkeep",
+      "purgatory"
+    ]
+  },
+  "Aim Arena": {
+    "factory": "aimarena",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Compact all-weapon aim fights: 200 health, 100 armor, full loadout, infinite ammo and no pickups.",
+    "default_bots": 1,
+    "default_skill": 5,
+    "default_map": "Random",
+    "maps": [
+      "thunderstruck",
+      "almostlost",
+      "campgrounds",
+      "asylum",
+      "overkill"
+    ]
+  },
+  "Vampire FFA": {
+    "factory": "vampireffa",
+    "map_types": [
+      "ffa"
+    ],
+    "description": "Damage heals the attacker. Keep fighting to stay alive.",
+    "default_bots": 6,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "asylum",
+      "campgrounds",
+      "overkill",
+      "trinity",
+      "retribution",
+      "grimdungeons"
+    ]
+  },
+  "Regenerator": {
+    "factory": "regenerator",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Health and armor regenerate during combat. Long fights and aggressive recovery.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "overkill",
+      "trinity",
+      "campgrounds",
+      "grimdungeons",
+      "retribution"
+    ]
+  },
+  "Plasma Storm": {
+    "factory": "plasmastorm",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Very fast plasma, faster fire rate, expanded splash and infinite ammo.",
+    "default_bots": 5,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "almostlost",
+      "brimstoneabbey",
+      "grimdungeons",
+      "lostworld"
+    ]
+  },
+  "Rail Frenzy": {
+    "factory": "railfrenzy",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Rail-only, fast reload, lower per-shot damage and high knockback: aim fast rather than wait for one-shot kills.",
+    "default_bots": 5,
+    "default_skill": 5,
+    "default_map": "Random",
+    "maps": [
+      "longestyard",
+      "hellsgate",
+      "spacechamber",
+      "beyondreality",
+      "asylum"
+    ]
+  },
+  "Excessive Lite": {
+    "factory": "excessivelite",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "A restrained excessive-style preset: faster weapons, stronger projectiles, higher speed and full arsenal.",
+    "default_bots": 6,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "overkill",
+      "trinity",
+      "campgrounds",
+      "asylum",
+      "retribution",
+      "longestyard"
+    ]
+  },
+  "Weapon Chaos": {
+    "factory": "weaponchaos",
+    "map_types": [
+      "ffa",
+      "duel",
+      "ca"
+    ],
+    "description": "Every launch rolls a weapon, health, movement and weapon modifier package before the match starts.",
+    "default_bots": 6,
+    "default_skill": 4,
+    "default_map": "Random",
+    "maps": [
+      "campgrounds",
+      "asylum",
+      "almostlost",
+      "overkill",
+      "trinity",
+      "retribution"
+    ]
+  }
+}
