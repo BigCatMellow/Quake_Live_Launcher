@@ -225,7 +225,7 @@ def upload_solo_exit_debug(game_dir=None, reason: str = "quake-exit") -> dict:
         return result
     login = (who.stdout or "").strip() if who.returncode == 0 else ""
     if login.lower() != GITHUB_DEBUG_OWNER.lower():
-        result["error"] = f"Automatic upload is restricted to GitHub user {GITHUB_DEBUG_OWNER}; authenticated user was {login or '(unknown)'} .".replace("(unknown) .", "(unknown).")
+        result["error"] = f"Automatic upload is restricted to GitHub user {GITHUB_DEBUG_OWNER}; authenticated user was {login or '(unknown)'} .".replace(" .", ".")
         _record_github_debug_status(result)
         return result
 
