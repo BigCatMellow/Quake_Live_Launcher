@@ -17,5 +17,5 @@ _new = b"""            if core.quake_running() and not core.solo_hot_switch_avai
 if _old not in _SOURCE:
     raise RuntimeError("Solo hot-load GUI compatibility point was not found in the retained payload")
 _SOURCE = _SOURCE.replace(_old, _new, 1)
-_SOURCE = _SOURCE.replace(b'APP_VERSION = "5.0-alpha"', b'APP_VERSION = "5.0-alpha-hotload1"', 1)
+_SOURCE = _SOURCE.replace(b'APP_VERSION = "5.0-alpha"', b'APP_VERSION = "5.0-alpha-hotload2"', 1)
 exec(compile(_SOURCE, str(_BASE / "launcher_gui_impl.py"), "exec"), globals(), globals())
