@@ -131,3 +131,34 @@ jobs:
           name: Quake_Live_Launcher_v5-alpha
           path: Quake_Live_Launcher_v5-alpha.zip
           if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/v5-alpha'
+    needs: product
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified install archive
+        uses: actions/download-artifact@v4
+        with:
+          name: Quake_Live_Launcher_v5-alpha
+
+      - name: Publish rolling v5 alpha prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v5-alpha-latest"
+          TITLE="Quake Live Launcher v5 Alpha (Latest)"
+          ARCHIVE="Quake_Live_Launcher_v5-alpha.zip"
+          CHECKSUM="$ARCHIVE.sha256"
+          sha256sum "$ARCHIVE" > "$CHECKSUM"
+          NOTES="Latest verified v5-alpha installer. Built from commit $GITHUB_SHA after the full test, install-smoke, archive-integrity, and executable-mode checks passed."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" --repo "$GITHUB_REPOSITORY" --clobber
+
