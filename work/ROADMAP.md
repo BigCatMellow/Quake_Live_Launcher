@@ -1,16 +1,18 @@
 # Roadmap: Quake Live Launcher v5
 
-- State: WORKING / LIVE QUALITY VALIDATION
+- State: ACTIVE LIVE BLOCKER / EVIDENCE COLLECTION
 
 ## Current reality
 
+- Full historical record of failed approaches, fixes, and do-not-repeat lessons: `work/TROUBLESHOOTING_HISTORY.md`.
+
 - `v5-alpha` is the complete installable launcher/product branch.
 - Real Linux Mint gameplay proved that QLDS + shinqlx + plugin readiness can succeed while encounter quality is still wrong; live gameplay quality is therefore a required release gate rather than post-release polish.
-- Real play also exposed a one-player forfeit race and the cost of restarting Quake between scripted modes. The runtime now treats single-player training state as a continuously enforced invariant and supports in-place scripted-Solo match switching over one persistent QLDS/client connection.
+- Real play exposed a one-player forfeit race and the cost of restarting Quake between scripted modes. The runtime treats single-player training state as a continuously enforced invariant and supports in-place scripted-Solo match switching over one persistent QLDS/client connection. **However, the operator reproduced the instant forfeit again on 2026-09-26, so the anti-forfeit implementation is not considered solved.**
 - The shared lifecycle fixes, startup-death guard, team sandbox, combat-ready bots, package verification and installed runtime gate are retained.
 - The Encounter Director is now the single production Solo encounter brain. `solo_directed` is the live compatibility/control entrypoint over `solo_arcade` + `DirectorRuntime` + `DirectorLearning` and now also owns the persistent match-handoff bridge.
 - Director learning records hypotheses/actions/outcomes, adapts bounded pressure during the current encounter, persists a decaying per-mode player model, and learns role/composition/action results across sessions.
-- Latest product evidence: hot-load/anti-forfeit code commit `3826a401e11519988b94979363c18fc7c6a3c3c2`; GitHub Actions run `33192578550` PASS; **116 tests PASS**; install/import/uninstall PASS; archive/source equality PASS for 39 shipped files; artifact `9694367525`.
+- Automated product evidence remains green, but real play currently overrides any inference that the forfeit is fixed. Build `5.0-alpha-hotload2` adds detached post-game diagnostic capture and optional owner-authenticated GitHub issue upload so the next anti-forfeit change can be based on real event ordering.
 
 ## Definition of DONE
 
@@ -68,7 +70,7 @@ See `work/HOTLOAD_CHECKPOINT.md`.
 - [x] `solo_directed` reasserts shinqlx single-player allowance on new game, map, player load and player spawn.
 - [x] first eligible live frame after map load reasserts the actual CurrentLevel training flag; low-frequency reassertion continues while the server is alive.
 - [x] regression deliberately clears the fake training flag during ACTIVE Horde and proves the next frame restores it without ending the objective.
-- [ ] Real Mint confirmation: Horde no longer forfeits immediately.
+- [ ] Real Mint confirmation: Horde no longer forfeits immediately. **Current result: FAILED AGAIN on 2026-09-26; blocker remains open.**
 
 ### In-place match handoff
 
@@ -237,11 +239,20 @@ Then sample remaining profiles before merge.
 
 ### Runtime Checkpoint D — anti-forfeit + hot-load
 
-- Decision: CONTINUE TO REAL MINT VALIDATION.
-- Evidence: `work/HOTLOAD_CHECKPOINT.md`; product commit `3826a401e11519988b94979363c18fc7c6a3c3c2`; GitHub Actions run `33192578550` PASS; **116 tests PASS**; installed launcher smoke PASS; archive/source equality PASS; artifact `9694367525`.
-- Challenge result: keeping one QLDS alive is preferred to restarting the server under an already-running client. Scripted Solo is in scope; native Arcade remains explicitly outside this hot-load claim.
-- Remaining uncertainty: actual Quake Live client/server map transition and real forfeit state can only be closed by target play.
+- Decision: **COLLECT REAL FAILURE EVIDENCE BEFORE ANOTHER ANTI-FORFEIT CHANGE.**
+- Evidence: `work/HOTLOAD_CHECKPOINT.md` and `work/TROUBLESHOOTING_HISTORY.md`. Automated training-state and hot-load regressions pass, but the operator reproduced the instant forfeit again on 2026-09-26.
+- Challenge result: constructor-only single-player permission was insufficient; repeated training-state enforcement is also not yet proven sufficient in the real engine. Do not keep stacking speculative cvar changes without the captured runtime sequence.
+- Hot-load design remains one persistent QLDS/client connection; native Arcade remains outside the scripted-Solo hot-load claim.
+- Current diagnostic: `5.0-alpha-hotload2` captures post-game session/plugin/hot-load/minqlx/server evidence and can create a privacy-scrubbed GitHub issue when `gh` is authenticated as `BigCatMellow`.
 
 ## Immediate next action
 
-Install the hot-load/anti-forfeit build on Mint. Close any Quake/old Solo server once so the new plugin is definitely loaded. Start Horde and verify it remains playable. While Quake stays open, return to the launcher and start Gun Game (then another scripted Solo mode) and confirm the running client follows the new match. Preserve Director logs/memory if gameplay quality is wrong.
+1. Install the latest `v5-alpha-latest` / `5.0-alpha-hotload2` build.
+2. Run `gh auth status` and authenticate as `BigCatMellow` if automatic GitHub issue upload is desired.
+3. Close old Quake/QLDS processes once so the new runtime is definitely loaded.
+4. Start Horde and reproduce the instant forfeit.
+5. Close Quake so the detached watcher captures the failure.
+6. Inspect the auto-created GitHub issue, or the local diagnostic report plus `solo_runtime/last_github_debug.json` if upload was unavailable.
+7. Reconstruct the exact order of map/new-game/player-load/player-spawn/training assertions versus the engine's forfeit indication.
+8. Only then change the anti-forfeit contract.
+9. After the forfeit is actually closed in real play, resume repeated Horde -> Gun Game -> Arena Run hot-load validation and Director quality tuning.
