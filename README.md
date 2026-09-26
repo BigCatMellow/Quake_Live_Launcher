@@ -29,19 +29,46 @@ Engineering history and approaches already tried are recorded in:
 - `work/RISK_REGISTER.md`
 - `docs/V5_DRY_RUN.md`
 
-## Install/update the launcher
+## Install the launcher
+
+Download **`quake-live-launcher-installer.sh`** from the
+[latest release](https://github.com/BigCatMellow/Quake_Live_Launcher/releases/tag/v5-alpha-latest)
+and run it:
 
 ```bash
-bash install.sh
+bash quake-live-launcher-installer.sh
 ```
 
-The normal launcher install does not require sudo. It installs under:
+It downloads the latest verified build, checks its SHA-256, and installs it into your
+home folder. No sudo is needed; it refuses to run as root. It installs under:
 
 ```text
 ~/.local/share/quake-live-launcher
 ~/.local/bin/quake-live-launcher
 ~/.local/share/applications/quake-live-launcher.desktop
 ```
+
+### Automatic updates
+
+Every time the launcher starts, it checks the `v5-alpha-latest` release (a short
+timeout, so it never blocks when you're offline). If a newer build has been published,
+it downloads it, verifies the checksum, installs it, and then starts the new version. A
+failed download or install always falls back to starting the version you already have.
+The release is only published by CI after the full test suite and install checks pass.
+
+- Check without updating: `python3 ~/.local/share/quake-live-launcher/qll_update.py --check`
+- Turn updates off: put `{"auto_update": false}` in `~/.config/quake-live-launcher/update.json`,
+  or start with `QLL_NO_UPDATE=1`.
+- Log: `~/.local/share/quake-live-launcher/logs/updater.log`
+
+### Installing from a source checkout
+
+```bash
+bash install.sh
+```
+
+This is recorded as a *local* install, and the updater never overwrites it; your
+working copy stays in charge. Running the installer switches back to release updates.
 
 ## Solo Engine setup
 
