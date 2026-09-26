@@ -2,7 +2,7 @@
 
 > Purpose: preserve the failures, attempted fixes, evidence, dead ends, and unresolved questions so a future debugging pass does not repeat work that has already been tried.
 >
-> This is a living engineering log. Current product state is on `v5-alpha`; `main` remains the older stable/documented baseline.
+> This is a living engineering log. v5 has now been merged into `main`; `v5-alpha` remains the rolling alpha/development branch used for verified prerelease builds.
 
 ## Current highest-priority failure
 
