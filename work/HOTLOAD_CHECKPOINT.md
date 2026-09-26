@@ -1,6 +1,6 @@
 # MAPS Checkpoint — Solo Forfeit Guard + Persistent Match Hot-Load
 
-- State: ACTIVE LIVE FAILURE — FOREIT STILL REPRODUCING / DIAGNOSTIC CAPTURE ADDED
+- State: ACTIVE LIVE FAILURE — FORFEIT STILL REPRODUCING / DIAGNOSTIC CAPTURE ADDED
 - Scope: scripted Solo modes on the local QLDS/shinqlx runtime
 - Full attempt/failure history: `work/TROUBLESHOOTING_HISTORY.md`
 
@@ -18,6 +18,8 @@ These are product-level failures even when QLDS, UDP and plugin readiness are he
 The operator again reported that the round **forfeits instantly** in real play. Therefore the anti-forfeit contract below remains a tested hypothesis, not a proven live fix. R-002 must remain open. The launcher now captures post-game runtime evidence automatically so the next fix can be based on the actual event ordering rather than another speculative training-state change.
 
 ## Root-cause model
+
+**Important:** this remains the leading model, not a confirmed root cause. The 2026-09-26 live failure means another engine condition or earlier/later lifecycle transition may be involved.
 
 Upstream shinqlx `allow_single_player(True)` changes the current level's training-map flag. If it is called before a CurrentLevel exists, the call is harmless but cannot mutate the future level. Therefore a constructor-time call alone is not a sufficient anti-forfeit contract.
 
