@@ -1,7 +1,8 @@
 # MAPS Checkpoint — Solo Forfeit Guard + Persistent Match Hot-Load
 
-- State: CONTINUE TO LIVE VALIDATION
+- State: ACTIVE LIVE FAILURE — FOREIT STILL REPRODUCING / DIAGNOSTIC CAPTURE ADDED
 - Scope: scripted Solo modes on the local QLDS/shinqlx runtime
+- Full attempt/failure history: `work/TROUBLESHOOTING_HISTORY.md`
 
 ## Triggering evidence
 
@@ -11,6 +12,10 @@ Real Mint play exposed two product failures that automated readiness did not pro
 2. Trying another scripted Solo mode required closing and reopening the Quake client.
 
 These are product-level failures even when QLDS, UDP and plugin readiness are healthy.
+
+### Latest live evidence — 2026-09-26
+
+The operator again reported that the round **forfeits instantly** in real play. Therefore the anti-forfeit contract below remains a tested hypothesis, not a proven live fix. R-002 must remain open. The launcher now captures post-game runtime evidence automatically so the next fix can be based on the actual event ordering rather than another speculative training-state change.
 
 ## Root-cause model
 
@@ -74,9 +79,19 @@ Rejected as the primary design. A stopped local server disconnects the client an
 
 No. Scripted Solo has a common server/plugin contract. Native Arcade currently does not. Claiming universal hot-load now would recreate the same product-integrity problem this roadmap is intended to prevent.
 
+## Automatic evidence capture for the unresolved forfeit
+
+Build `5.0-alpha-hotload2` starts a detached watcher for Solo-launched Quake sessions. After Quake closes it captures session, plugin/hot-load state, server log, minqlx log and diagnostics. A local report is always written. If `gh` is authenticated as `BigCatMellow`, a privacy-scrubbed GitHub issue is created automatically.
+
+The uploader does not embed a token. Upload success/failure is recorded in:
+
+`~/.local/share/quake-live-launcher/solo_runtime/last_github_debug.json`
+
+This is now the preferred evidence path for the instant-forfeit blocker.
+
 ## Remaining release evidence
 
-- [ ] Real Mint: Horde no longer forfeits at launch.
+- [ ] Real Mint: Horde no longer forfeits at launch. **FAILED AGAIN 2026-09-26 — still reproducing.**
 - [ ] Real Mint: after one fresh scripted Solo launch, selecting another scripted Solo mode from the launcher changes the running match without closing Quake.
 - [ ] Real Mint: multiple sequential switches do not leave stale bots/objective state.
 - [ ] Real Mint: Director player/playbook memory survives and records `switched` sessions correctly.
