@@ -1,0 +1,161 @@
+{
+  "arcade": {
+    "Weapon Chaos": {
+      "5": ["Campgrounds", "Asylum", "Almost Lost", "Overkill"],
+      "4": ["Trinity", "Retribution"]
+    },
+    "Unholy Trinity": {
+      "5": ["Campgrounds", "Asylum", "Overkill", "Trinity"],
+      "4": ["Hidden Fortress", "Almost Lost"]
+    },
+    "Hot Rockets": {
+      "5": ["Almost Lost", "Campgrounds", "Thunderstruck", "Overkill"],
+      "4": ["Quarantine", "Asylum"]
+    },
+    "Rocket Mayhem": {
+      "5": ["Thunderstruck", "Hell's Gate", "Space Chamber", "Longest Yard"],
+      "4": ["Almost Lost", "Overkill"]
+    },
+    "All Guns FFA": {
+      "5": ["Campgrounds", "Asylum", "Overkill", "Trinity"],
+      "4": ["Retribution", "Grim Dungeons"]
+    },
+    "Knockout": {
+      "5": ["Longest Yard", "Space Chamber", "Hell's Gate", "Beyond Reality"],
+      "4": ["Thunderstruck"]
+    },
+    "Turbo Quake": {
+      "5": ["Aerowalk", "Hektik", "Toxicity", "Campgrounds"],
+      "4": ["Lost World", "Purgatory"]
+    },
+    "Glass Cannon": {
+      "5": ["Asylum", "Almost Lost", "Campgrounds", "Hell's Gate"],
+      "4": ["Longest Yard"]
+    },
+    "Juggernaut Arena": {
+      "5": ["Trinity", "Overkill", "Grim Dungeons", "Campgrounds"],
+      "4": ["Demon Keep", "Purgatory"]
+    },
+    "Aim Arena": {
+      "5": ["Thunderstruck", "Almost Lost", "Campgrounds", "Asylum"],
+      "4": ["Overkill"]
+    },
+    "Vampire FFA": {
+      "5": ["Asylum", "Campgrounds", "Overkill", "Trinity"],
+      "4": ["Retribution", "Grim Dungeons"]
+    },
+    "Regenerator": {
+      "5": ["Overkill", "Trinity", "Campgrounds", "Grim Dungeons"],
+      "4": ["Retribution"]
+    },
+    "Plasma Storm": {
+      "5": ["Campgrounds", "Almost Lost", "Brimstone Abbey", "Grim Dungeons"],
+      "4": ["Lost World"]
+    },
+    "Rail Frenzy": {
+      "5": ["Longest Yard", "Hell's Gate", "Space Chamber", "Beyond Reality"],
+      "4": ["Asylum"]
+    },
+    "Excessive Lite": {
+      "5": ["Overkill", "Trinity", "Campgrounds", "Asylum"],
+      "4": ["Retribution", "Longest Yard"]
+    }
+  },
+  "solo": {
+    "arena_run": {
+      "5": ["Campgrounds", "Asylum", "Almost Lost", "Overkill"],
+      "4": ["Trinity", "Retribution", "Purgatory", "Lost World"]
+    },
+    "horde": {
+      "5": ["Overkill", "Trinity", "Asylum", "Grim Dungeons"],
+      "4": ["Demon Keep", "Hidden Fortress", "Campgrounds"]
+    },
+    "gun_game": {
+      "5": ["Campgrounds", "Asylum", "Almost Lost", "Retribution"],
+      "4": ["Overkill", "Trinity"]
+    },
+    "boss_rush": {
+      "5": ["Blood Run", "Aerowalk", "Furious Heights", "Hektik"],
+      "4": ["Lost World", "Sinister", "Elder"]
+    },
+    "wipeout_solo": {
+      "5": ["Thunderstruck", "Overkill", "Campgrounds", "Asylum"],
+      "4": ["Quarantine", "Trinity"]
+    },
+    "gauntlet_run": {
+      "5": ["Campgrounds", "Almost Lost", "Asylum", "Overkill"],
+      "4": ["Longest Yard", "Thunderstruck", "Blood Run", "Trinity"]
+    },
+    "last_stand": {
+      "5": ["Overkill", "Asylum", "Grim Dungeons", "Trinity"],
+      "4": ["Campgrounds"]
+    },
+    "one_life": {
+      "5": ["Campgrounds", "Asylum", "Almost Lost", "Retribution"],
+      "4": ["Lost World"]
+    },
+    "bounty_hunt": {
+      "5": ["Campgrounds", "Asylum", "Overkill", "Trinity"],
+      "4": ["Retribution"]
+    },
+    "rocket_tag": {
+      "5": ["Thunderstruck", "Almost Lost", "Overkill", "Quarantine"],
+      "4": ["Campgrounds"]
+    },
+    "movement_hunter": {
+      "5": ["Longest Yard", "Hell's Gate", "Space Chamber", "Beyond Reality"],
+      "4": ["Demon Keep"]
+    },
+    "predator": {
+      "5": ["Asylum", "Campgrounds", "Overkill", "Trinity"],
+      "4": ["Almost Lost"]
+    },
+    "accuracy_trial": {
+      "5": ["Thunderstruck", "Longest Yard", "Hell's Gate", "Almost Lost"],
+      "4": ["Campgrounds", "Asylum"]
+    },
+    "speedrun_combat": {
+      "5": ["Aerowalk", "Hektik", "Toxicity", "Almost Lost"],
+      "4": ["Thunderstruck", "Campgrounds"]
+    },
+    "random_loadout": {
+      "5": ["Campgrounds", "Asylum", "Almost Lost", "Overkill"],
+      "4": ["Trinity", "Retribution"]
+    }
+  },
+  "arena_run_rounds": {
+    "normal": {
+      "5": ["Campgrounds", "Asylum", "Almost Lost", "Retribution"],
+      "4": ["Overkill", "Trinity", "Purgatory", "Lost World"]
+    },
+    "boss": {
+      "5": ["Blood Run", "Aerowalk", "Hektik", "Lost World"],
+      "4": ["Furious Heights", "Sinister", "Elder"]
+    },
+    "elite": {
+      "5": ["Overkill", "Trinity", "Grim Dungeons", "Demon Keep"],
+      "4": ["Asylum", "Hidden Fortress"]
+    },
+    "rail": {
+      "5": ["Longest Yard", "Hell's Gate", "Space Chamber", "Beyond Reality"],
+      "4": ["Asylum"]
+    },
+    "lg": {
+      "5": ["Thunderstruck", "Almost Lost", "Campgrounds"],
+      "4": ["Asylum", "Overkill"]
+    },
+    "rocket": {
+      "5": ["Thunderstruck", "Quarantine", "Campgrounds", "Almost Lost"],
+      "4": ["Overkill", "Asylum"]
+    }
+  },
+  "gauntlet_stages": {
+    "rail": {"5": ["Longest Yard", "Hell's Gate", "Space Chamber"], "4": ["Asylum"]},
+    "rocket": {"5": ["Thunderstruck", "Quarantine", "Campgrounds"], "4": ["Almost Lost"]},
+    "lg": {"5": ["Thunderstruck", "Almost Lost", "Campgrounds"], "4": ["Asylum"]},
+    "survival": {"5": ["Overkill", "Trinity", "Asylum"], "4": ["Campgrounds"]},
+    "duel": {"5": ["Blood Run", "Aerowalk", "Hektik"], "4": ["Lost World", "Sinister"]},
+    "plasma": {"5": ["Campgrounds", "Brimstone Abbey", "Grim Dungeons"], "4": ["Almost Lost"]},
+    "boss": {"5": ["Blood Run", "Aerowalk", "Furious Heights"], "4": ["Hektik", "Lost World"]}
+  }
+}

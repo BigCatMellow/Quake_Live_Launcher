@@ -1,0 +1,77 @@
+[
+  {
+    "title": "Weapon Chaos",
+    "tag": "DICE MODE",
+    "description": "Every launch rolls a weapon, health, movement and weapon modifier package before the match starts."
+  },
+  {
+    "title": "Unholy Trinity",
+    "tag": "POST-QL INSPIRED",
+    "description": "Rocket Launcher + Lightning Gun + Railgun. Infinite ammo, no weapon/ammo pickups, fast weapon switching."
+  },
+  {
+    "title": "Hot Rockets",
+    "tag": "POST-QL INSPIRED",
+    "description": "Rocket-only arena: heavy direct/splash damage, fast reload, infinite ammo and reduced interruption from pickups."
+  },
+  {
+    "title": "Rocket Mayhem",
+    "tag": "CHAOS",
+    "description": "Fast rockets, huge splash/knockback, low gravity and faster movement. Deliberately chaotic."
+  },
+  {
+    "title": "All Guns FFA",
+    "tag": "ARCADE",
+    "description": "Spawn fully armed with infinite ammo and fight immediately; no weapon or ammo control required."
+  },
+  {
+    "title": "Knockout",
+    "tag": "CHAOS",
+    "description": "High knockback, low weapon damage and space-map friendly rules. Win by throwing opponents around as much as shooting them."
+  },
+  {
+    "title": "Turbo Quake",
+    "tag": "CHAOS",
+    "description": "Faster movement, stronger air control, bunny-hop physics and near-instant weapon switching."
+  },
+  {
+    "title": "Glass Cannon",
+    "tag": "RULESET",
+    "description": "Full arsenal, only 50 health and no starting armor. Very fast, punishing fights."
+  },
+  {
+    "title": "Juggernaut Arena",
+    "tag": "RULESET",
+    "description": "Full arsenal, 400 health + 200 armor, infinite ammo and sustained fights."
+  },
+  {
+    "title": "Aim Arena",
+    "tag": "POST-QL INSPIRED",
+    "description": "Compact all-weapon aim fights: 200 health, 100 armor, full loadout, infinite ammo and no pickups."
+  },
+  {
+    "title": "Vampire FFA",
+    "tag": "RULESET",
+    "description": "Damage heals the attacker. Keep fighting to stay alive."
+  },
+  {
+    "title": "Regenerator",
+    "tag": "RULESET",
+    "description": "Health and armor regenerate during combat. Long fights and aggressive recovery."
+  },
+  {
+    "title": "Plasma Storm",
+    "tag": "CHAOS",
+    "description": "Very fast plasma, faster fire rate, expanded splash and infinite ammo."
+  },
+  {
+    "title": "Rail Frenzy",
+    "tag": "ARCADE",
+    "description": "Rail-only, fast reload, lower per-shot damage and high knockback: aim fast rather than wait for one-shot kills."
+  },
+  {
+    "title": "Excessive Lite",
+    "tag": "CHAOS",
+    "description": "A restrained excessive-style preset: faster weapons, stronger projectiles, higher speed and full arsenal."
+  }
+]
