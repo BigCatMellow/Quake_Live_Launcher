@@ -1,0 +1,582 @@
+# Troubleshooting History — Quake Live Launcher v5
+
+> Purpose: preserve the failures, attempted fixes, evidence, dead ends, and unresolved questions so a future debugging pass does not repeat work that has already been tried.
+>
+> This is a living engineering log. Current product state is on `v5-alpha`; `main` remains the older stable/documented baseline.
+
+## Current highest-priority failure
+
+**Status as of 2026-09-26: still reproducing in real Linux Mint play.**
+
+The scripted Solo round can **forfeit immediately** after the player enters the match.
+
+This remains unresolved even though:
+
+- QLDS starts;
+- the UDP socket can be healthy;
+- shinqlx/plugin readiness can be healthy;
+- the scripted plugin can initialize;
+- automated fake-minqlx tests pass;
+- the training/single-player contract is asserted repeatedly in code.
+
+Therefore **do not treat a green CI run, a live QLDS process, UDP readiness, or `plugin_ready.json` as proof that the real Quake client will not enter its normal one-player multiplayer forfeit path.**
+
+The next evidence source is the automatic post-game diagnostic uploader added in `5.0-alpha-hotload2`.
+
+---
+
+# 1. v4.11 lessons that caused the v5 rebuild
+
+The v4.11 audit found multiple architectural problems. v5 was intentionally built to avoid patching around them.
+
+## What was wrong
+
+- Single-player behavior was not based on the proper shinqlx `allow_single_player(True)` contract.
+- ZMQ-dependent hooks could be used without guaranteeing `zmq_stats_enable 1`.
+- Existing Quake cvars were sometimes handled with `set_cvar_once` when runtime enforcement required `set_cvar`.
+- `bot_minplayers` could race against scripted bot ownership.
+- Wave ownership could become "all bots" rather than exact plugin-owned bot IDs.
+- Delayed callbacks could fire after the objective that created them had ended.
+- Map transitions used fixed sleep/timer guesses instead of confirmed engine lifecycle events.
+- MOD/damage handling relied on string/numeric heuristics instead of exported minqlx constants.
+- Some upgrades were advertised without meaningful runtime behavior.
+- Some modes did not have complete terminal-state behavior.
+- Movement/ground detection contained heuristic behavior that was too weak for reliable scripted movement.
+
+## Decision
+
+Do not reintroduce these shortcuts to solve new runtime problems unless new evidence proves they are necessary.
+
+Reference: `docs/V4_11_AUDIT.md`.
+
+---
+
+# 2. First v5 dry-run failures
+
+The initial v5 adapter looked sound at the pure-state level but failed a stricter execution walk-through.
+
+Reference: `docs/V5_DRY_RUN.md`.
+
+## 2.1 minqlx package imports were wrong
+
+### Failure
+
+Plugin sibling imports assumed the plugin directory itself was directly on `sys.path`.
+
+### Why it mattered
+
+That could compile normally and still fail when minqlx loaded the plugin using its real package layout.
+
+### Fix
+
+The Solo runtime became an actual package and plugin sibling imports were corrected to package-relative imports.
+
+Relevant history includes:
+
+- `6673f4b` — make Solo runtime a package
+- `56c04ad` — make Solo modes a package
+
+### Rule
+
+A normal Python import test is not enough. Keep the fake-minqlx package-layout import test.
+
+---
+
+## 2.2 FFA was the wrong combat sandbox
+
+### Failure
+
+Scripted wave enemies were originally spawned into FFA/free.
+
+### Effect
+
+Enemies could treat each other as opponents, corrupting objective ownership and wave behavior.
+
+### Fix
+
+Scripted Solo uses an invisible TDM sandbox:
+
+- human = RED;
+- scripted enemies = BLUE;
+- friendly fire off;
+- normal score/time/round limits disabled;
+- `bot_minplayers 0`;
+- plugin owns objective completion.
+
+### Rule
+
+Do not switch wave modes back to FFA as a convenience fix.
+
+---
+
+## 2.3 Living-bot count was incorrectly used as spawn completion
+
+### Failure
+
+The controller originally decided that PREPARING was complete when the number of *currently alive* enemies reached the intended spawn count.
+
+If an early bot died before the later staggered spawns occurred, the living count might never reach the target.
+
+### Effect
+
+An objective could remain stuck in PREPARING forever.
+
+### Fix
+
+Track these separately:
+
+- `expected_spawns`;
+- `fulfilled_spawns`;
+- `enemy_ids` currently alive.
+
+Activation uses fulfilled spawn events. Clearing uses living owned IDs.
+
+### Rule
+
+Never collapse spawn accounting and live-enemy ownership into one number.
+
+---
+
+## 2.4 QLDS/UDP health was a false-positive health check
+
+### Failure
+
+The original shell check only proved that `qzeroded` was alive and UDP 27960 was listening.
+
+### Effect
+
+A plugin import/init failure could still look like a healthy Solo server.
+
+### Fix
+
+The plugin writes a readiness handshake, and startup requires matching plugin readiness before launching the client.
+
+Relevant history:
+
+- `62192cf` — require real plugin readiness before client launch
+- `d048897` — add installed-runtime QLDS self-test
+
+### Rule
+
+Process alive + socket open != Solo Engine ready.
+
+---
+
+## 2.5 Starting from player_loaded was too early
+
+### Failure
+
+Mode startup could begin at `player_loaded`, before the human was guaranteed to be alive on the intended combat team.
+
+### Effect
+
+Bots/objectives could begin during spectator/team transition and startup deaths could be misinterpreted.
+
+### Fix
+
+Remember the human at load, force RED, then gate actual mode start on a real human spawn.
+
+### Rule
+
+A client having loaded is not the same thing as a player being combat-ready.
+
+---
+
+## 2.6 Fixed-delay map transitions were not reliable
+
+### Failure
+
+Older logic assumed a map would be ready after a hard-coded delay.
+
+### Fix
+
+Map changes now carry pending transition state and resume only after the expected map/player lifecycle is observed.
+
+### Remaining risk
+
+Real Workshop/custom maps can still have variable load time or fail independently. A 15-second launcher hot-load acknowledgement timeout is currently unproven for every map and should not be changed without live evidence.
+
+---
+
+# 3. Real gameplay failures after the simulated foundation passed
+
+Automated tests proved many lifecycle invariants, but real Linux Mint play found product failures that simulation did not.
+
+## 3.1 Passive / non-contributing bots
+
+### Observation
+
+QLDS and the plugin could work, but some Horde encounters felt passive or bots failed to contribute enough.
+
+### What changed
+
+The project added:
+
+- explicit combat-ready loadouts;
+- safer aggressive engine cvars;
+- encounter roles;
+- contribution/engagement telemetry;
+- conservative idle-bot recovery/replacement;
+- the Encounter Director.
+
+### What was deliberately *not* done
+
+- no scripted direct aiming;
+- no scripted firing;
+- no custom pathfinding;
+- no hidden damage multipliers;
+- no hostile instant teleport into danger.
+
+### Current state
+
+Improved in tests, but subjective quality still requires real play.
+
+---
+
+## 3.2 Modes appearing to terminate immediately
+
+### Observation
+
+Several scripted modes appeared to end immediately during early real play.
+
+### Changes made
+
+The runtime added/strengthened:
+
+- startup-death guards;
+- explicit terminal-state logic;
+- exact bot ownership;
+- generation-safe delayed callbacks;
+- team assertions;
+- finite-mode completion tests.
+
+### Rule
+
+A death/event during PREPARING, team transition, or map transition must not be treated as an ACTIVE objective death unless the mode contract explicitly says so.
+
+---
+
+# 4. Instant one-player forfeit history
+
+This is the current blocker.
+
+## 4.1 First approach: call allow_single_player(True)
+
+The initial assumption was that calling shinqlx `allow_single_player(True)` during plugin initialization would be enough.
+
+### Result
+
+**Not sufficient in real play.** The game could still immediately enter the ordinary multiplayer one-player forfeit path.
+
+### Why the model changed
+
+`allow_single_player(True)` affects the **current level**. A constructor/init call can happen before the eventual CurrentLevel exists. A successful call at that point is therefore not proof that the loaded map received the training/single-player state.
+
+---
+
+## 4.2 Second approach: treat training state as an invariant
+
+The runtime was changed to enforce the contract repeatedly:
+
+- request `g_training 1` before the initial `+map`;
+- put `g_training 1` in server configuration;
+- call `allow_single_player(True)` on new-game;
+- call it on map;
+- call it on player-loaded;
+- call it on player-spawn;
+- reassert from the first eligible live frame;
+- continue low-frequency reassertion while the server remains alive;
+- reset the frame assertion gate after hot-loaded map transitions.
+
+Regression:
+
+- `3826a40` — deliberately remove fake training permission during ACTIVE Horde and prove the next live frame restores it without ending the objective.
+
+### Result
+
+Automated proof passes.
+
+### Real result
+
+**Still not closed.** On 2026-09-26 the operator again reported that the round forfeits instantly.
+
+This means at least one of the following remains possible:
+
+1. the real engine's forfeit decision occurs before our reassertion can matter;
+2. `g_training` / `allow_single_player` is not the entire real-engine contract;
+3. another cvar/factory/gamestate transition later overwrites it;
+4. the client/server are entering a different state than our fake-minqlx model represents;
+5. an old installed runtime/plugin may be involved;
+6. the observed "forfeit" is produced by another Quake lifecycle condition that looks similar.
+
+Do not select one of these as the root cause without runtime evidence.
+
+---
+
+# 5. Persistent Solo / hot-load attempts
+
+The second live usability problem was having to close/reopen Quake for every scripted Solo mode.
+
+## 5.1 Rejected approach: restart QLDS but keep Quake open
+
+This was considered and rejected as the main architecture.
+
+### Why
+
+Stopping the local server disconnects the client. Reconnection would depend on reliably injecting client commands into an already-running Quake process, which the launcher does not own well enough.
+
+### Chosen model
+
+Keep one QLDS process and one client connection alive. Switch the scripted match inside the live server and use ordinary server map transitions.
+
+---
+
+## 5.2 First hot-load availability check was too weak
+
+### Early assumption
+
+If a QLDS PID exists and `plugin_ready` is true, reuse the server.
+
+### Problem
+
+An older plugin/server could satisfy those generic checks but not understand the new hot-load protocol.
+
+### Fix
+
+Add `hotload_ready.json` with:
+
+- protocol version;
+- live server PID;
+- ready flag;
+- current mode.
+
+The launcher only reuses the server when the marker matches the **current PID** and expected protocol.
+
+Relevant commits:
+
+- `c5528e0` — require live hot-load capability handshake
+- `b05f27f` — advertise hot-load protocol from live server
+- `a12fb18` — test live capability marker
+- `1f670d0` — test PID-matched capability before reuse
+
+---
+
+## 5.3 Reporting "loading" as successful hot-load was wrong
+
+### Failure
+
+The launcher initially accepted `loading` as a successful match switch.
+
+### Why that was wrong
+
+A map request being accepted is not proof that the human has actually spawned into the new match.
+
+### Fix
+
+Only `started` or `active` counts as launcher success.
+
+Relevant commits:
+
+- `b095aa0` — wait for live player spawn before confirming hot-load
+- `e1ee2e3` — regression requiring spawn before success
+
+---
+
+## 5.4 Recreating SoloController on hot-load could allow stale callback collisions
+
+### Failure model
+
+A fresh controller could restart its generation counter. A delayed callback from the old mode could theoretically have a generation value that matched the new controller.
+
+### Fix
+
+Keep the controller object, explicitly finish/bump the old generation, clear the old encounter, then reuse it with the new mode.
+
+Relevant commits:
+
+- `b5a3188` — preserve lifecycle generations across Solo hot-loads
+- `8df9e97` — prove stale callbacks cannot cross a hot-load
+
+### Rule
+
+Generation IDs must remain monotonic across the lifetime of one persistent server.
+
+---
+
+# 6. Diagnostics evolution
+
+## 6.1 Manual logs were not enough
+
+Earlier debugging depended on manually finding and sharing files under:
+
+`~/.local/share/quake-live-launcher/logs/`
+
+That is fragile for failures that happen immediately or only on shutdown.
+
+## 6.2 Automatic post-game capture
+
+Added in `5.0-alpha-hotload2`.
+
+Relevant commits:
+
+- `26e0045` — upload Solo exit diagnostics to GitHub
+- `9664bbd` — bump debug build version
+- `ffdb32f` — test automatic GitHub debug upload
+- `90f4134` — document automatic post-game capture
+
+### Behavior
+
+A detached watcher survives launcher/plugin failure, waits for Quake to close, then captures:
+
+- launcher/system diagnostics;
+- Solo session;
+- `plugin_ready.json`;
+- `hotload_ready.json`;
+- match request;
+- match status;
+- minqlx log tail;
+- QLDS/server log tail.
+
+It always creates a local report.
+
+If GitHub CLI is installed and authenticated as `BigCatMellow`, it posts a privacy-scrubbed GitHub issue.
+
+### Security decisions
+
+Do **not** embed a GitHub token in the launcher.
+
+The public issue copy scrubs:
+
+- home-directory path;
+- hostname;
+- username where practical;
+- obvious GitHub token forms;
+- Authorization token values.
+
+Automatic upload is restricted to the repository owner's authenticated `gh` account.
+
+Upload status is stored in:
+
+`~/.local/share/quake-live-launcher/solo_runtime/last_github_debug.json`
+
+---
+
+# 7. CI/package issue that was not a product failure
+
+On 2026-09-26 the first `hotload2` CI run failed after all 138 unit/integration tests passed.
+
+### Cause
+
+The disposable-install smoke test still asserted:
+
+`APP_VERSION == 5.0-alpha-hotload1`
+
+while the launcher correctly reported:
+
+`5.0-alpha-hotload2`.
+
+### Fix
+
+Update the stale CI expectation.
+
+Commit:
+
+- `53e9318` — expect hotload2 launcher version
+
+The subsequent workflow passed.
+
+### Lesson
+
+Distinguish stale verification metadata from runtime product failure. The failed workflow did **not** indicate a launcher logic regression.
+
+---
+
+# 8. Verified release packaging
+
+A rolling prerelease is published only after the product workflow passes.
+
+Current mechanism:
+
+- build install ZIP;
+- verify archive file set equals shipped source;
+- verify byte equality after extraction;
+- verify executable bits;
+- publish/replace `v5-alpha-latest` release asset.
+
+Commit introducing rolling release:
+
+- `aff0281` — publish verified v5 alpha launcher release
+
+This keeps a downloadable installer out of normal Git history while still giving the operator a stable download URL.
+
+---
+
+# 9. Things that green tests still do not prove
+
+These require real Quake Live / Linux Mint play:
+
+- the real engine does not forfeit a one-human scripted match;
+- the real client remains connected through repeated server map changes;
+- repeated Horde -> Gun Game -> Arena Run hot-loads do not leak bots/state;
+- Workshop maps load within the current acknowledgement assumptions;
+- movement bind restoration works after every exit/crash path;
+- Director pressure feels fair rather than rubber-banded;
+- native Quake bot behavior is sufficiently active on representative maps;
+- persistent Director learning improves play instead of overfitting.
+
+---
+
+# 10. Current next diagnostic sequence
+
+For the immediate-forfeit issue:
+
+1. Install the latest `v5-alpha-latest` build.
+2. Ensure `gh auth status` is authenticated as `BigCatMellow` if automatic issue upload is desired.
+3. Close old Quake/QLDS processes once before the test so the new plugin is definitely loaded.
+4. Start a scripted Solo Horde match.
+5. Allow the instant forfeit to occur.
+6. Close Quake.
+7. Check:
+   - the new auto-debug GitHub issue, or
+   - `last_github_debug.json` and the local diagnostic report if upload was unavailable.
+8. Compare timestamps/state around:
+   - initial map;
+   - new_game/map hooks;
+   - player_loaded;
+   - player_spawn;
+   - training-state assertions;
+   - first forfeit indication;
+   - plugin readiness and server liveness.
+9. Change the anti-forfeit logic only after identifying which event happens first in the real engine.
+
+---
+
+# 11. Do-not-repeat list
+
+Unless new evidence specifically contradicts these conclusions:
+
+- Do not trust UDP/process health by itself.
+- Do not trust plugin import/readiness as proof of gameplay correctness.
+- Do not rely on a constructor-only `allow_single_player(True)` call.
+- Do not return scripted wave modes to FFA.
+- Do not use `bot_minplayers` to own scripted population.
+- Do not infer completed spawns from living enemy count.
+- Do not use unguarded delayed callbacks.
+- Do not use fixed sleeps as proof that a map transition completed.
+- Do not accept hot-load `loading` as user-visible success.
+- Do not reuse a server merely because a PID and generic plugin readiness exist; require the PID-matched hot-load protocol marker.
+- Do not recreate lifecycle generations in a way that allows old callbacks to collide with a new match.
+- Do not restart QLDS under an already-running Quake client as the normal hot-load design.
+- Do not embed GitHub credentials in the launcher.
+- Do not mark the immediate-forfeit issue resolved from simulation alone.
+
+---
+
+# Related records
+
+- `docs/V4_11_AUDIT.md` — reasons v4.11 was replaced.
+- `docs/V5_DRY_RUN.md` — deterministic v5 integration problems found before live play.
+- `work/HOTLOAD_CHECKPOINT.md` — current anti-forfeit/hot-load architecture and live validation gate.
+- `work/RISK_REGISTER.md` — active engineering/product risks.
+- `work/ROADMAP.md` — release definition and current next work.
+- `docs/DIRECTOR_DESIGN.md` / `docs/DIRECTOR_LEARNING.md` — Director boundaries and learning contract.
