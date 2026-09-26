@@ -16,6 +16,19 @@ scripted Solo Engine designed around a single explicit lifecycle.
 - Detailed setup/start/server diagnostics.
 - Optional automatic post-game GitHub debug capture for the repository owner.
 
+## Current alpha status
+
+The real Linux Mint runtime still has one high-priority unresolved issue: a scripted Solo round can **forfeit immediately** even though the server/plugin health checks and automated single-player-training regressions pass. This was reproduced again on **2026-09-26**.
+
+The current build includes automatic post-game diagnostic capture specifically to investigate that failure. Do not interpret green CI as proof that the real-engine forfeit issue is solved.
+
+Engineering history and approaches already tried are recorded in:
+
+- `work/TROUBLESHOOTING_HISTORY.md`
+- `work/HOTLOAD_CHECKPOINT.md`
+- `work/RISK_REGISTER.md`
+- `docs/V5_DRY_RUN.md`
+
 ## Install/update the launcher
 
 ```bash
