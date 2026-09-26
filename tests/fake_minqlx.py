@@ -42,7 +42,9 @@ class FakePlayer:
     def weapon(self, value=None):
         if value is not None: self._weapon=int(value); return True
         return self._weapon
-    def powerups(self, **kwargs): return True
+    def powerups(self, reset=False, **kwargs):
+        if reset: self._powerups = {}
+        self._powerups = {**getattr(self, "_powerups", {}), **kwargs}; return True
     def velocity(self, reset=False, **kwargs):
         if reset: self._velocity=SimpleNamespace(x=0.0,y=0.0,z=0.0)
         for key,value in kwargs.items(): setattr(self._velocity,key,float(value))

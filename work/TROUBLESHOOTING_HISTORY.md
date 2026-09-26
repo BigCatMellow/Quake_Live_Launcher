@@ -347,6 +347,19 @@ Quake Live's own scoreboard/accuracy stats may not accumulate during warmup. The
 
 ---
 
+## 4.4 Other ways a run could end instantly (fixed in 5.0-alpha-modes1)
+
+Found while reviewing the modes; either could look like an early forfeit:
+
+- **Bot self-kills failed the whole run.** A bot's own rocket/grenade splash is reported with the bot as its own killer, which tripped the bot-vs-bot contract check (`SOLO ENGINE CONTRACT FAILURE`). `bot_rocketjump 1` and Rocket Tag made this common. Self-kills (`SUICIDE` flag or killer == victim) and telefrags are now neutral enemy deaths; other bot-vs-bot kills still fail the contract.
+- **Duplicate bot names mis-resolved deaths.** shinqlx/minqlx resolve bot deaths by name (bots have no Steam ID in the stats stream) and take the first match. Continuous-mode replacements and Horde wave 14+ reused live names, so a kill could remove a living namesake while the real victim stayed counted. Every bot in play now gets a unique name (reservations cover scheduled adds).
+
+## 4.5 Solo controls cfg was never effective (fixed in 5.0-alpha-modes1)
+
+The retained launcher payload stored its controls helpers with one escaping layer too many: the cfg was joined with a literal backslash-n (one line beginning with `//`, so the whole file was a comment), and the bind regexes contained literal `\\s`, so strafe-key detection always fell back to A/D and restores appended junk lines to `qzconfig.cfg`. Side-thruster keys therefore never worked (only `!dash`). `launcher.py` now overrides `_parse_binds`, `_replace_bind_line` and `write_solo_controls_cfg`; the payload stays byte-stable.
+
+---
+
 # 5. Persistent Solo / hot-load attempts
 
 The second live usability problem was having to close/reopen Quake for every scripted Solo mode.

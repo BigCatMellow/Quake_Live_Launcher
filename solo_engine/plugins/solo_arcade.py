@@ -41,7 +41,7 @@ SESSION_FILE = Path.home() / ".config/quake-live-launcher/solo_session.json"
 STATE_FILE = Path.home() / ".config/quake-live-launcher/arena_run_state_v5.json"
 RUNTIME_DIR = Path.home() / ".local/share/quake-live-launcher/solo_runtime"
 PLUGIN_READY_FILE = RUNTIME_DIR / "plugin_ready.json"
-PLUGIN_VERSION = "5.0-alpha-warmup1"
+PLUGIN_VERSION = "5.0-alpha-modes1"
 
 # Forfeit root cause (v5.0-alpha-warmup1):
 #
@@ -65,6 +65,48 @@ WARMUP_SANDBOX_CVARS = {
     "g_warmupDelay": "0",
 }
 READY_COMMANDS = {"readyup", "ready", "notready"}
+
+RECORDS_FILE = Path.home() / ".config/quake-live-launcher/solo_records.json"
+
+# Every bot in play must have a unique name: shinqlx/minqlx resolve bot deaths
+# by NAME (bots have no Steam ID in the stats stream), so two "Keel"s make a
+# death resolve to whichever Keel is listed first.  Nine names covers the
+# largest squad (Horde caps at nine).
+BOT_NAME_POOL = tuple(BOT_ROSTER)
+
+# Modes where a successful finish records a completion time (lower is better).
+TIMED_GOAL_MODES = {
+    "arena_run", "gun_game", "boss_rush", "wipeout_solo", "gauntlet_run",
+    "one_life", "bounty_hunt", "rocket_tag", "predator", "accuracy_trial",
+    "speedrun_combat", "random_loadout",
+}
+# Modes where a human death ends the run.
+FATAL_DEATH_MODES = {
+    "horde", "boss_rush", "gauntlet_run", "last_stand", "one_life",
+    "movement_hunter", "predator",
+}
+
+WIPEOUT_LIVES = 3
+GUN_GAME_KILLS_PER_TIER = 2
+MOVEMENT_HUNTER_SECONDS = 90
+MOVEMENT_HUNTER_CALLOUTS = (60, 30, 10, 5, 4, 3, 2, 1)
+LAST_STAND_BASE_BOTS = 5
+LAST_STAND_MAX_BOTS = 8
+LAST_STAND_MAX_THREAT = 8
+PREDATOR_HUNGER_DELAY = 8.0     # seconds without a kill before hunger starts
+PREDATOR_HUNGER_DRAIN = 4       # health lost per second while hungry
+PREDATOR_HUNGER_FLOOR = 10      # hunger never kills on its own
+SPEEDRUN_SPLITS = (5, 10)
+TARGET_HASTE_SECONDS = 600      # Haste smoke trail marks bounty targets
+BOT_NAME_RESERVATION_SECONDS = 30.0
+
+
+def format_duration(seconds) -> str:
+    seconds = max(0.0, float(seconds))
+    minutes, rest = divmod(seconds, 60.0)
+    if minutes >= 1:
+        return f"{int(minutes)}:{rest:05.2f}"
+    return f"{rest:.2f}s"
 
 SUPPORTED_MODES = {
     "arena_run", "horde", "gun_game", "boss_rush", "wipeout_solo",
@@ -119,42 +161,8 @@ class solo_arcade(minqlx.Plugin):
         self.base_dash_charges = max(1, min(3, int(self.movement.get("dash_charges", 1))))
 
         self.controller = SoloController(self.mode)
-        self.horde = HordeState(self.seed) if self.mode == "horde" else None
-        self.gun_game = GunGameState() if self.mode == "gun_game" else None
-        self.run = None
-        self.current_plan = None
         self.player_id = None
-        self.mode_started = False
-        self.pending_resume_payload = None
-        self.preactive_dead_ids = set()
-        self.pending_replacements = 0
-        self.start_time = time.time()
-        self.kills = 0
-        self.player_deaths = 0
-
-        self.boss_round = 1
-        self.gauntlet_stage = 1
-        self.gauntlet_kind = "survival"
-        self.wipeout_round = 1
-        self.wipeout_respawn_level = 0
-        self.wipeout_generation = 0
-        self.target_bot_id = None
-        self.target_name = None
-        self.target_score = 0
-        self.challenge_goal = 0
-        self.random_round = 1
-
-        self.last_damage_time = {}
-        self.last_hurt_time = {}
-        self.last_regen_tick = {}
-        self.lg_streak = {}
-        self.rail_hits = {}
-
-        self.dash_ready = {}
-        self.dash_used = {}
-        self.airborne = set()
-        self.prev_vz = {}
-        self.ground_ticks = {}
+        self._reset_mode_state()
 
         self.director_runtime = DirectorRuntime(self, self.mode, self.difficulty, self.seed, RUNTIME_DIR)
 
@@ -187,12 +195,67 @@ class solo_arcade(minqlx.Plugin):
         self.add_command(("pick", "choose"), self.cmd_pick)
         self.add_command(("upgrades", "build"), self.cmd_upgrades)
         self.add_command("dash", self.cmd_dash)
+        self.add_command(("best", "records"), self.cmd_best)
 
         self.controller.wait_for_player()
         self._write_ready(True)
         self._log(f"plugin ready mode={self.mode} seed={self.seed} skill={self.skill}")
 
     # ---------- runtime/bootstrap ----------
+    def _reset_mode_state(self):
+        """Reset every per-run field. Shared by construction and hot-load."""
+        self.horde = HordeState(self.seed) if self.mode == "horde" else None
+        self.gun_game = GunGameState(kills_per_tier=GUN_GAME_KILLS_PER_TIER) if self.mode == "gun_game" else None
+        self.run = None
+        self.current_plan = None
+        self.mode_started = False
+        self.pending_resume_payload = None
+        self.preactive_dead_ids = set()
+        self.pending_replacements = 0
+        self.pending_bot_names = []  # [(name, reserved_at)]
+        self.start_time = time.time()
+        self.objective_live_at = None
+        self.kills = 0
+        self.player_deaths = 0
+        self.result_recorded = False
+        self.anomalous_bot_kills = 0
+
+        self.boss_round = 1
+        self.gauntlet_stage = 1
+        self.gauntlet_kind = "survival"
+        self.wipeout_round = 1
+        self.wipeout_respawn_level = 0
+        self.wipeout_generation = 0
+        self.wipeout_lives = WIPEOUT_LIVES
+        self.target_bot_id = None
+        self.target_name = None
+        self.target_score = 0
+        self.challenge_goal = 0
+        self.random_round = 1
+
+        self.threat_level = 1
+        self.next_threat_check = 0.0
+        self.last_kill_time = None
+        self.next_hunger_tick = 0.0
+        self.hunger_announced = False
+        self.acc_hits = 0
+        self.acc_damage = 0
+        self.acc_first_hit = {}
+        self.acc_ttk = []
+        self.pending_splits = {}
+
+        self.last_damage_time = {}
+        self.last_hurt_time = {}
+        self.last_regen_tick = {}
+        self.lg_streak = {}
+        self.rail_hits = {}
+
+        self.dash_ready = {}
+        self.dash_used = {}
+        self.airborne = set()
+        self.prev_vz = {}
+        self.ground_ticks = {}
+
     def _load_session(self):
         try:
             data = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
@@ -360,14 +423,58 @@ class solo_arcade(minqlx.Plugin):
                     pass
         self.controller.enemy_ids.clear()
         self.preactive_dead_ids.clear()
+        self.pending_bot_names = []
         if hasattr(self, "director_runtime"):
             self.director_runtime.reset()
+
+    # ---------- unique bot names ----------
+    def _bot_names_in_use(self):
+        # A reservation whose addbot never produced a spawn (rejected bot,
+        # map change) expires instead of shrinking the pool forever.
+        now = time.time()
+        self.pending_bot_names = [
+            (name, at) for name, at in self.pending_bot_names if now - at < BOT_NAME_RESERVATION_SECONDS
+        ]
+        names = {clean_name(bot).lower() for bot in self.bot_players()}
+        names.update(name for name, _at in self.pending_bot_names)
+        return names
+
+    def _pending_bot_count(self):
+        return len(self.pending_bot_names)
+
+    def _reserve_bot_name(self, preferred=None):
+        """Reserve a bot name no living or pending bot uses.
+
+        Deaths are resolved by name, so a duplicate would let a kill land on
+        the wrong bot (a living namesake gets kicked while the real victim
+        stays counted, stalling wave clears and mis-crediting bounty targets).
+        """
+        used = self._bot_names_in_use()
+        wanted = str(preferred).lower() if preferred else None
+        if wanted and wanted not in used:
+            name = wanted
+        else:
+            free = [candidate for candidate in BOT_NAME_POOL if candidate not in used]
+            if free:
+                name = free[0] if wanted else random.choice(free)
+            else:
+                name = wanted or random.choice(BOT_NAME_POOL)
+        self.pending_bot_names.append((name, time.time()))
+        return name
+
+    def _release_bot_name(self, name):
+        wanted = str(name).lower()
+        for index, (pending, _at) in enumerate(self.pending_bot_names):
+            if pending == wanted:
+                del self.pending_bot_names[index]
+                return
 
     def _spawn_objective_bots(self, names, skill, *, auto_clear=True):
         names = list(names)
         self.clear_all_bots()
         self.director_runtime.begin_objective()
         self.pending_replacements = 0
+        names = [self._reserve_bot_name(name) for name in names]
         token = self.controller.begin_objective(len(names), auto_clear=auto_clear)
         for index, name in enumerate(names):
             self._add_bot_later(name, skill, index * 0.15, token)
@@ -378,18 +485,27 @@ class solo_arcade(minqlx.Plugin):
         def _add():
             if self.controller.token_valid(token, Phase.PREPARING, Phase.ACTIVE):
                 minqlx.console_command(f"addbot {name} {clamp(int(skill), 1, 5)} blue")
+            else:
+                self._release_bot_name(name)
         _add()
 
     def _add_replacement_bot(self, name=None, skill=None, delay=0.35):
         token = self.controller.token()
-        name = name or random.choice(BOT_ROSTER_RUNTIME)
-        skill = self.skill if skill is None else skill
+        name = self._reserve_bot_name(name)
+        skill = self._reinforcement_skill() if skill is None else skill
         delay = self.director_runtime.reinforcement_delay(delay)
         @minqlx.delay(delay)
         def _add():
             if self.controller.token_valid(token, Phase.ACTIVE):
                 minqlx.console_command(f"addbot {name} {clamp(int(skill), 1, 5)} blue")
+            else:
+                self._release_bot_name(name)
         _add()
+
+    def _reinforcement_skill(self):
+        if self.mode == "last_stand":
+            return min(5, self.skill + (self.threat_level - 1) // 3)
+        return self.skill
 
     def _kick_bot_id(self, client_id):
         for bot in list(self.bot_players()):
@@ -429,6 +545,7 @@ class solo_arcade(minqlx.Plugin):
             return
         if is_bot(player):
             self._put_team(player, "blue")
+            self._release_bot_name(clean_name(player))
             if player.id in self.preactive_dead_ids:
                 self._kick_bot_id(player.id)
                 return
@@ -465,8 +582,48 @@ class solo_arcade(minqlx.Plugin):
             self.clear_all_bots()
 
     def _on_objective_activated(self):
+        now = time.time()
+        first_activation = self.objective_live_at is None
+        self.objective_live_at = now
+        if self.last_kill_time is None:
+            self.last_kill_time = now
+        if first_activation and self.mode == "speedrun_combat":
+            # The clock starts when the enemies are actually in play, not when
+            # the first of the staggered bot spawns was requested.
+            self.start_time = now
+            self.msg("^2GO!^7 Clock is running.")
+        if first_activation and self.mode == "movement_hunter":
+            self._arm_movement_hunter_timer()
         if self.mode in ("bounty_hunt", "rocket_tag") and self.target_bot_id is None:
             self._choose_target()
+
+    # ---------- between-round resupply ----------
+    def _refresh_human_for_round(self):
+        """Re-arm the player for a new round/wave/stage.
+
+        Map weapon/ammo pickups are disabled in the scripted sandbox, so without
+        this a multi-round run slowly starves: Horde/Boss Rush/Gauntlet/Wipeout
+        used to hand out ammo only on spawn. It also applies the correct trial
+        weapon for the round that is about to start. Health and armor are never
+        lowered (except Arena Run, whose upgrade caps define max health).
+        """
+        player = self.primary_player()
+        if player is None or not getattr(player, "is_alive", True):
+            return
+        try:
+            prev_health, prev_armor = int(player.health), int(player.armor)
+        except Exception:
+            prev_health, prev_armor = 0, 0
+        self._apply_human_loadout(player)
+        if self.mode == "arena_run":
+            return
+        try:
+            if int(player.health) < prev_health:
+                player.health = prev_health
+            if int(player.armor) < prev_armor:
+                player.armor = prev_armor
+        except Exception:
+            pass
 
     # ---------- mode bootstrap ----------
     def _start_selected_mode(self):
@@ -477,13 +634,13 @@ class solo_arcade(minqlx.Plugin):
         elif self.mode == "boss_rush": self._start_boss()
         elif self.mode == "wipeout_solo": self._start_wipeout()
         elif self.mode == "gauntlet_run": self._start_gauntlet_stage()
-        elif self.mode == "last_stand": self._start_continuous(5, "^6LAST STAND^7 — survive as long as you can.", goal=0)
+        elif self.mode == "last_stand": self._start_last_stand()
         elif self.mode == "one_life": self._start_continuous(5, "^6ONE LIFE^7 — reach 12 kills without dying.", goal=12)
         elif self.mode == "bounty_hunt": self._start_bounty_hunt()
         elif self.mode == "rocket_tag": self._start_rocket_tag()
         elif self.mode == "movement_hunter": self._start_movement_hunter()
-        elif self.mode == "predator": self._start_continuous(5, "^6PREDATOR^7 — reach 25 kills; kills restore health.", goal=25)
-        elif self.mode == "accuracy_trial": self._start_continuous(4, "^6ACCURACY TRIAL^7 — clear 20 LG kills and review your accuracy.", goal=20)
+        elif self.mode == "predator": self._start_continuous(5, f"^6PREDATOR^7 — reach 25 kills. Kills heal you; go {PREDATOR_HUNGER_DELAY:.0f}s without one and you starve.", goal=25)
+        elif self.mode == "accuracy_trial": self._start_continuous(4, "^6ACCURACY TRIAL^7 — 20 Lightning Gun kills. Results: hits, damage and time-to-kill.", goal=20)
         elif self.mode == "speedrun_combat": self._start_continuous(5, "^6SPEEDRUN COMBAT^7 — clear 15 kills as fast as possible.", goal=15)
         elif self.mode == "random_loadout": self._start_continuous(5, "^6RANDOM LOADOUT^7 — reach 20 kills; loadout rerolls every 4 kills and death.", goal=20)
 
@@ -494,6 +651,9 @@ class solo_arcade(minqlx.Plugin):
         plan = self.horde.plan()
         elite = " ^1ELITE" if plan["elite"] else ""
         self.msg(f"^6HORDE WAVE {plan['wave']}^7 — {plan['count']} enemies{elite}")
+        if plan["wave"] > 1:
+            self._refresh_human_for_round()
+            self.msg("^5RESUPPLIED.")
         self._spawn_objective_bots(plan["bots"], plan["skill"], auto_clear=True)
 
     def _horde_clear(self):
@@ -504,22 +664,39 @@ class solo_arcade(minqlx.Plugin):
 
     # ---------- Gun Game ----------
     def _start_gun_game(self):
-        self.msg(f"^6GUN GAME^7 — start with {self.gun_game.weapon_name}")
+        self.msg(
+            f"^6GUN GAME^7 — {self.gun_game.kills_per_tier} kills per weapon, finish with a Gauntlet kill. "
+            f"Start: {self.gun_game.weapon_name}. ^1Bot Gauntlet kills demote you."
+        )
         self._spawn_objective_bots(["slash", "keel", "visor", "anarki", "sarge"], self.skill, auto_clear=False)
 
     def _gun_game_kill(self, killer):
         if not self.gun_game or self.gun_game.complete:
             return
-        if self.gun_game.scored_kill():
-            self._finish_mode("^2GUN GAME COMPLETE!^7 Gauntlet kill finished the ladder.")
+        result = self.gun_game.scored_kill()
+        if result == "complete":
+            self._finish_mode("^2GUN GAME COMPLETE!^7 Gauntlet kill finished the ladder.", success=True)
             return
-        self._give_single_weapon(killer, self.gun_game.weapon)
-        killer.tell(f"^2ADVANCE:^7 {self.gun_game.weapon_name}")
+        if result == "advance":
+            self._give_single_weapon(killer, self.gun_game.weapon)
+            suffix = " ^1— FINAL: Gauntlet kill wins" if self.gun_game.is_final_tier else ""
+            killer.center_print(f"^2ADVANCE:^7 {self.gun_game.weapon_name}{suffix}")
+            killer.tell(f"^2ADVANCE:^7 {self.gun_game.weapon_name} (tier {self.gun_game.index + 1}/8){suffix}")
+        else:
+            killer.center_print(f"^7{self.gun_game.weapon_name} {self.gun_game.tier_kills}/{self.gun_game.tier_goal}")
+
+    def _gun_game_humiliated(self, victim):
+        if not self.gun_game or self.gun_game.complete:
+            return
+        if self.gun_game.demote():
+            self.msg(f"^1HUMILIATED!^7 Demoted to {self.gun_game.weapon_name}.")
+        else:
+            self.msg("^1HUMILIATED!^7 Tier progress lost.")
 
     # ---------- Boss Rush ----------
     def _start_boss(self):
         if self.boss_round > 10:
-            self._finish_mode("^2BOSS RUSH COMPLETE!^7 Ten bosses defeated.")
+            self._finish_mode("^2BOSS RUSH COMPLETE!^7 Ten bosses defeated.", success=True)
             return
         bosses = ["keel", "slash", "doom", "xaero"]
         name = bosses[(self.boss_round - 1) % len(bosses)]
@@ -527,17 +704,24 @@ class solo_arcade(minqlx.Plugin):
             "boss": True, "theme": "boss", "health": 500 + self.boss_round * 250,
             "armor": 150 + self.boss_round * 125, "damage_mult": 1.0 + self.boss_round * 0.08,
         }
-        self.msg(f"^1BOSS {self.boss_round}/10:^7 {name.upper()}")
+        self.msg(f"^1BOSS {self.boss_round}/10:^7 {name.upper()} ^7(x{self.current_plan['damage_mult']:.2f} damage)")
+        if self.boss_round > 1:
+            self._refresh_human_for_round()
         self._spawn_objective_bots([name], min(5, 3 + self.boss_round // 2), auto_clear=True)
 
     # ---------- Wipeout ----------
     def _start_wipeout(self):
         if self.wipeout_round > 5:
-            self._finish_mode("^2WIPEOUT SOLO COMPLETE!^7 Five squads wiped simultaneously.")
+            self._finish_mode("^2WIPEOUT SOLO COMPLETE!^7 Five squads wiped simultaneously.", success=True)
             return
         self.wipeout_generation += 1
         self.wipeout_respawn_level = 0
-        self.msg(f"^6WIPEOUT ROUND {self.wipeout_round}/5:^7 eliminate the whole squad at once.")
+        self.msg(
+            f"^6WIPEOUT ROUND {self.wipeout_round}/5:^7 eliminate the whole squad at once. "
+            f"Lives: ^3{self.wipeout_lives}"
+        )
+        if self.wipeout_round > 1:
+            self._refresh_human_for_round()
         self._spawn_objective_bots(["slash", "keel", "visor", "anarki"], min(5, self.skill + (self.wipeout_round - 1) // 2), auto_clear=True)
 
     def _schedule_wipeout_respawn(self, name):
@@ -545,11 +729,11 @@ class solo_arcade(minqlx.Plugin):
         delay = min(25.0, 2.0 + self.wipeout_respawn_level * 2.0)
         generation = self.wipeout_generation
         token = self.controller.token()
+        name = self._reserve_bot_name(name)
         @minqlx.delay(delay)
         def _respawn():
-            if generation != self.wipeout_generation:
-                return
-            if not self.controller.token_valid(token, Phase.ACTIVE):
+            if generation != self.wipeout_generation or not self.controller.token_valid(token, Phase.ACTIVE):
+                self._release_bot_name(name)
                 return
             minqlx.console_command(f"addbot {name} {min(5, self.skill + (self.wipeout_round - 1) // 2)} blue")
         _respawn()
@@ -557,7 +741,7 @@ class solo_arcade(minqlx.Plugin):
     # ---------- Gauntlet ----------
     def _start_gauntlet_stage(self):
         if self.gauntlet_stage > 10:
-            self._finish_mode("^2THE GAUNTLET COMPLETE!^7 Ten stages cleared.")
+            self._finish_mode("^2THE GAUNTLET COMPLETE!^7 Ten stages cleared.", success=True)
             return
         kinds = ["rail", "rocket", "lg", "survival", "duel", "plasma", "boss"]
         kind = kinds[(self.gauntlet_stage - 1) % len(kinds)]
@@ -574,12 +758,16 @@ class solo_arcade(minqlx.Plugin):
         if kind == "boss":
             name = ["keel", "slash", "doom", "xaero"][(self.gauntlet_stage // 2) % 4]
             self.current_plan = {"boss": True, "theme": "boss", "health": 650 + self.gauntlet_stage * 60, "armor": 250, "damage_mult": 1.25}
+            # Loadout after the plan/kind is set, so the trial weapon matches
+            # the stage even when no map change (and so no respawn) happens.
+            self._refresh_human_for_round()
             self._spawn_objective_bots([name], min(5, self.skill + 1), auto_clear=True)
             return
         count = 3 if kind == "duel" else 6
         rng = random.Random(self.seed + self.gauntlet_stage * 53)
         names = rng.sample(list(BOT_ROSTER_RUNTIME), k=min(count, len(BOT_ROSTER_RUNTIME)))
         self.current_plan = {"theme": kind, "health": 120, "armor": 25, "damage_mult": 1.0}
+        self._refresh_human_for_round()
         self._spawn_objective_bots(names, min(5, self.skill + self.gauntlet_stage // 4), auto_clear=True)
 
     # ---------- Continuous challenge modes ----------
@@ -589,26 +777,142 @@ class solo_arcade(minqlx.Plugin):
         names = list(BOT_ROSTER_RUNTIME[:count])
         self._spawn_objective_bots(names, self.skill, auto_clear=False)
 
+    # ---------- Last Stand escalation ----------
+    def _start_last_stand(self):
+        self.challenge_goal = 0
+        self.threat_level = 1
+        self.current_plan = self._last_stand_plan(1)
+        self.msg("^6LAST STAND^7 — one life. The threat level rises every 5 kills and every minute.")
+        names = list(BOT_ROSTER_RUNTIME[:LAST_STAND_BASE_BOTS])
+        self._spawn_objective_bots(names, self.skill, auto_clear=False)
+
+    @staticmethod
+    def _last_stand_plan(level):
+        level = max(1, int(level))
+        return {
+            "theme": "last_stand",
+            "health": 100 + (level - 1) * 10,
+            "armor": (level - 1) * 10,
+            "damage_mult": 1.0 + (level - 1) * 0.05,
+        }
+
+    def _last_stand_target_level(self, now=None):
+        now = time.time() if now is None else now
+        live_at = self.objective_live_at or now
+        minutes = int(max(0.0, now - live_at) // 60)
+        return min(LAST_STAND_MAX_THREAT, 1 + self.kills // 5 + minutes)
+
+    def _update_last_stand_threat(self, now=None):
+        if self.mode != "last_stand" or self.controller.phase != Phase.ACTIVE:
+            return
+        level = self._last_stand_target_level(now)
+        if level <= self.threat_level:
+            return
+        self.threat_level = level
+        self.current_plan = self._last_stand_plan(level)
+        desired = min(LAST_STAND_MAX_BOTS, LAST_STAND_BASE_BOTS + (level - 1) // 2)
+        present = len(self.controller.enemy_ids) + self._pending_bot_count()
+        extra = max(0, desired - present)
+        self.msg(
+            f"^1THREAT LEVEL {level}^7 — enemies {desired}, skill {self._reinforcement_skill()}, "
+            f"+{(level - 1) * 10} hp"
+        )
+        for index in range(extra):
+            self._add_replacement_bot(delay=0.3 + index * 0.2)
+
+    # ---------- Predator hunger ----------
+    def _tick_predator_hunger(self, now):
+        if self.mode != "predator" or self.controller.phase != Phase.ACTIVE:
+            return
+        last = self.last_kill_time or self.objective_live_at
+        if last is None or now - last < PREDATOR_HUNGER_DELAY or now < self.next_hunger_tick:
+            return
+        self.next_hunger_tick = now + 1.0
+        player = self.primary_player()
+        if player is None or not getattr(player, "is_alive", False):
+            return
+        try:
+            health = int(player.health)
+            if health > PREDATOR_HUNGER_FLOOR:
+                player.health = max(PREDATOR_HUNGER_FLOOR, health - PREDATOR_HUNGER_DRAIN)
+        except Exception:
+            return
+        if not self.hunger_announced:
+            self.hunger_announced = True
+            try: player.center_print("^1STARVING^7 — kill to feed")
+            except Exception: pass
+
+    # ---------- Accuracy Trial stats ----------
+    def _accuracy_note_hit(self, target, damage, mod):
+        lightning_mods = {getattr(minqlx, "MOD_LIGHTNING", -102), getattr(minqlx, "MOD_LIGHTNING_DISCHARGE", -103)}
+        if mod not in lightning_mods:
+            return
+        self.acc_hits += 1
+        self.acc_damage += max(0, int(damage))
+        self.acc_first_hit.setdefault(target.id, time.time())
+
+    def _accuracy_note_kill(self, victim):
+        first = self.acc_first_hit.pop(victim.id, None)
+        if first is not None:
+            self.acc_ttk.append(max(0.0, time.time() - first))
+
+    def _accuracy_summary(self):
+        if not self.acc_ttk and not self.acc_hits:
+            return None
+        avg_ttk = sum(self.acc_ttk) / len(self.acc_ttk) if self.acc_ttk else 0.0
+        best_ttk = min(self.acc_ttk) if self.acc_ttk else 0.0
+        per_kill = self.acc_damage / max(1, self.kills)
+        return {
+            "hits": self.acc_hits, "damage": self.acc_damage, "damage_per_kill": per_kill,
+            "avg_ttk": avg_ttk, "best_ttk": best_ttk,
+        }
+
     def _start_bounty_hunt(self):
         self.target_score = 0
         self.challenge_goal = 8
-        self.msg("^6BOUNTY HUNT^7 — eliminate 8 marked targets.")
+        self.msg("^6BOUNTY HUNT^7 — eliminate 8 marked targets. Targets leave a Haste smoke trail.")
         self._spawn_objective_bots(["slash", "keel", "visor", "anarki", "sarge"], self.skill, auto_clear=False)
 
     def _start_rocket_tag(self):
         self.target_score = 0
         self.challenge_goal = 10
-        self.msg("^6ROCKET TAG^7 — rocket-only; eliminate 10 marked targets.")
+        self.msg("^6ROCKET TAG^7 — rocket-only; eliminate 10 marked targets. Targets leave a Haste smoke trail.")
         self._spawn_objective_bots(["slash", "keel", "visor", "anarki", "sarge"], self.skill, auto_clear=False)
 
     def _start_movement_hunter(self):
-        self.msg("^6MOVEMENT HUNTER^7 — survive 90 seconds against five armed bots.")
-        token = self._spawn_objective_bots(["slash", "keel", "visor", "anarki", "sarge"], self.skill, auto_clear=False)
-        @minqlx.delay(90.0)
+        self.msg(f"^6MOVEMENT HUNTER^7 — survive {MOVEMENT_HUNTER_SECONDS} seconds against five armed bots.")
+        self._spawn_objective_bots(["slash", "keel", "visor", "anarki", "sarge"], self.skill, auto_clear=False)
+
+    def _arm_movement_hunter_timer(self):
+        """Start the survival clock when the bots are live, with on-screen callouts."""
+        token = self.controller.token()
+        total = float(MOVEMENT_HUNTER_SECONDS)
+        for remaining in MOVEMENT_HUNTER_CALLOUTS:
+            if remaining >= total:
+                continue
+            self._movement_hunter_callout(total - remaining, remaining, token)
+
+        @minqlx.delay(total)
         def _finish():
             if self.controller.token_valid(token, Phase.ACTIVE):
-                self._finish_mode(f"^2MOVEMENT HUNTER CLEAR!^7 Survived 90 seconds with {self.kills} kills.")
+                self._finish_mode(
+                    f"^2MOVEMENT HUNTER CLEAR!^7 Survived {MOVEMENT_HUNTER_SECONDS} seconds with {self.kills} kills.",
+                    success=True,
+                )
         _finish()
+
+    def _movement_hunter_callout(self, delay, remaining, token):
+        @minqlx.delay(delay)
+        def _callout():
+            if not self.controller.token_valid(token, Phase.ACTIVE):
+                return
+            player = self.primary_player()
+            if player is None:
+                return
+            color = "^1" if remaining <= 10 else "^3"
+            try: player.center_print(f"{color}{remaining}^7 seconds left")
+            except Exception: pass
+        _callout()
 
     def _choose_target(self):
         bots = [bot for bot in self.bot_players() if bot.id in self.controller.enemy_ids]
@@ -619,7 +923,14 @@ class solo_arcade(minqlx.Plugin):
         target = rng.choice(bots)
         self.target_bot_id = target.id
         self.target_name = clean_name(target)
-        self.msg(f"^3TARGET:^7 {self.target_name}")
+        # Haste's smoke trail makes the target findable in a crowd.
+        try: target.powerups(haste=TARGET_HASTE_SECONDS)
+        except Exception as exc: self._log(f"target marker failed: {exc}")
+        self.msg(f"^3TARGET:^7 {self.target_name} ^7(follow the smoke trail)")
+        player = self.primary_player()
+        if player is not None:
+            try: player.center_print(f"^3TARGET: ^7{self.target_name}")
+            except Exception: pass
 
     # ---------- Arena Run ----------
     def current_map_name(self):
@@ -686,6 +997,8 @@ class solo_arcade(minqlx.Plugin):
             self.msg(f"^1ELITE ROUND {self.run.round}^7 — {plan['count']} enemies")
         else:
             self.msg(f"^6ROUND {self.run.round}^7 — {plan['count']} enemies")
+        # Applied here (not in !pick) so the loadout matches THIS round's trial.
+        self._refresh_human_for_round()
         self._spawn_objective_bots(plan["bots"], plan["skill"], auto_clear=True)
 
     def _arena_clear(self):
@@ -693,7 +1006,7 @@ class solo_arcade(minqlx.Plugin):
             return
         if advance_round(self.run):
             save_state(STATE_FILE, self.run)
-            self._finish_mode(f"^2ARENA RUN COMPLETE!^7 Rounds cleared: ^3{self.run.round}")
+            self._finish_mode(f"^2ARENA RUN COMPLETE!^7 Rounds cleared: ^3{self.run.round}", success=True)
             return
         roll_upgrade_choices(self.run)
         save_state(STATE_FILE, self.run)
@@ -707,7 +1020,7 @@ class solo_arcade(minqlx.Plugin):
         for index, uid in enumerate(self.run.choices, 1):
             upgrade = UPGRADE_BY_ID[uid]
             color = RARITY_COLOR.get(upgrade["rarity"], "^7")
-            target(f"^3!pick {index} ^7— {color}{upgrade['name']} ^7[{upgrade['rarity'].upper()}] — {upgrade['text']}")
+            target(f"^3F{index + 4} ^7/ ^3!pick {index} ^7— {color}{upgrade['name']} ^7[{upgrade['rarity'].upper()}] — {upgrade['text']}")
 
     def cmd_pick(self, player, msg, channel):
         if self.mode != "arena_run" or not self.run:
@@ -723,7 +1036,8 @@ class solo_arcade(minqlx.Plugin):
         for synergy in result["synergies"]:
             self.msg(f"^6SYNERGY UNLOCKED:^7 {synergy['name']} — {synergy['text']}")
         save_state(STATE_FILE, self.run)
-        self._apply_human_loadout(player)
+        # _launch_arena_plan re-arms the player once the next round's plan
+        # (and trial weapon) exists; doing it here used the previous plan.
         self._start_arena_round()
 
     def cmd_upgrades(self, player, msg, channel):
@@ -740,10 +1054,16 @@ class solo_arcade(minqlx.Plugin):
     def handle_death(self, victim, killer, data):
         if not is_player_object(victim):
             return
+        data = data if isinstance(data, dict) else {}
         if is_bot(victim):
             self._handle_bot_death(victim, killer, data)
             return
-        self._handle_human_death(victim)
+        self._handle_human_death(victim, killer, data)
+
+    @staticmethod
+    def _death_mod(data):
+        mod = data.get("MOD") if isinstance(data, dict) else None
+        return str(mod or "").upper()
 
     def _handle_bot_death(self, victim, killer, data):
         if victim.id not in self.controller.enemy_ids:
@@ -751,17 +1071,39 @@ class solo_arcade(minqlx.Plugin):
             return
         phase_before = self.controller.phase
         self.director_runtime.bot_died(victim, killer)
+        mod = self._death_mod(data)
+        suicide = bool(data.get("SUICIDE")) or (is_player_object(killer) and killer.id == victim.id)
         killer_human = is_player_object(killer) and not is_bot(killer)
-        killer_bot = is_player_object(killer) and is_bot(killer)
-        if killer_bot:
-            self.controller.fail(f"bot-vs-bot kill detected ({killer.id}->{victim.id}); team sandbox contract failed")
+        killer_bot = is_player_object(killer) and is_bot(killer) and not suicide
+        if suicide:
+            # Own rocket/grenade splash or a fall credited to itself: an ordinary
+            # enemy death, not an infighting contract failure.
+            self._log(f"bot self-kill id={victim.id} mod={mod or '?'}")
+            killer = None
+        elif killer_bot and mod == "TELEFRAG":
+            # Telefrags ignore friendly fire; staggered spawns on small maps can
+            # cause them without the team sandbox being broken.
+            self._log(f"bot telefrag {killer.id}->{victim.id}; treated as a neutral death")
+            killer = None
+        elif killer_bot:
+            self.controller.fail(f"bot-vs-bot kill detected ({killer.id}->{victim.id} mod={mod or '?'}); team sandbox contract failed")
             self.clear_all_bots()
             self.msg("^1SOLO ENGINE CONTRACT FAILURE:^7 bots damaged each other; see diagnostics.")
             return
 
         if killer_human:
             self.kills += 1
+            self.last_kill_time = time.time()
+            self.hunger_announced = False
+            if self.mode == "accuracy_trial":
+                self._accuracy_note_kill(victim)
             self._on_human_kill(killer, victim)
+            if self.controller.phase in (Phase.COMPLETE, Phase.FAILED):
+                return
+        elif self.mode in ("bounty_hunt", "rocket_tag") and victim.id == self.target_bot_id:
+            self.msg(f"^3TARGET LOST:^7 {self.target_name or 'bounty'} died without your help — new target incoming.")
+            self.target_bot_id = None; self.target_name = None
+            self._schedule_target_refresh()
 
         cleared = self.controller.enemy_died(victim.id)
         if phase_before == Phase.PREPARING:
@@ -780,6 +1122,10 @@ class solo_arcade(minqlx.Plugin):
 
         if phase_before == Phase.ACTIVE and self.mode in self._continuous_modes():
             self._add_replacement_bot()
+            if self.mode == "last_stand":
+                # After the 1:1 replacement is queued, so extra bots are
+                # computed against the real squad size.
+                self._update_last_stand_threat()
 
     def _continuous_modes(self):
         return {
@@ -814,34 +1160,49 @@ class solo_arcade(minqlx.Plugin):
             self.msg(f"^2TARGET ELIMINATED:^7 {self.target_name or 'bounty'} ({self.target_score}/{self.challenge_goal})")
             self.target_bot_id = None; self.target_name = None
             if self.target_score >= self.challenge_goal:
-                self._finish_mode("^2TARGET CHALLENGE COMPLETE!")
+                self._finish_mode("^2TARGET CHALLENGE COMPLETE!", success=True)
                 return
             self._schedule_target_refresh()
 
         if self.mode == "one_life" and self.kills >= 12:
-            self._finish_mode("^2ONE LIFE CLEAR!^7 12 kills without dying.")
+            self._finish_mode("^2ONE LIFE CLEAR!^7 12 kills without dying.", success=True)
         elif self.mode == "predator" and self.kills >= 25:
-            self._finish_mode("^2PREDATOR COMPLETE!^7 25-kill streak reached.")
+            self._finish_mode("^2PREDATOR COMPLETE!^7 25-kill streak reached.", success=True)
         elif self.mode == "accuracy_trial" and self.kills >= 20:
-            self._finish_mode("^2ACCURACY TRIAL COMPLETE!^7 20 LG kills cleared; review final weapon accuracy.")
-        elif self.mode == "speedrun_combat" and self.kills >= 15:
-            self._finish_mode(f"^2SPEEDRUN COMPLETE!^7 {time.time() - self.start_time:.2f} seconds")
+            self._finish_mode("^2ACCURACY TRIAL COMPLETE!^7 20 Lightning Gun kills.", success=True)
+        elif self.mode == "speedrun_combat":
+            if self.kills >= 15:
+                self._finish_mode(f"^2SPEEDRUN COMPLETE!^7 {format_duration(time.time() - self.start_time)}", success=True)
+            elif self.kills in SPEEDRUN_SPLITS:
+                self._speedrun_split(killer)
         elif self.mode == "random_loadout":
             if self.kills >= 20:
-                self._finish_mode("^2RANDOM LOADOUT COMPLETE!^7 20 kills cleared.")
+                self._finish_mode("^2RANDOM LOADOUT COMPLETE!^7 20 kills cleared.", success=True)
             elif self.kills % 4 == 0:
                 self.random_round += 1
                 self._apply_human_loadout(killer)
+
+    def _speedrun_split(self, player):
+        elapsed = time.time() - self.start_time
+        record = self._records_entry().get(f"split_{self.kills}")
+        line = f"^5SPLIT {self.kills}/15:^7 {format_duration(elapsed)}"
+        if isinstance(record, (int, float)):
+            delta = elapsed - float(record)
+            line += f" ({'^2' if delta <= 0 else '^1'}{delta:+.2f}s^7 vs best)"
+        self.pending_splits[self.kills] = elapsed
+        try: player.center_print(line)
+        except Exception: pass
 
     def _schedule_target_refresh(self):
         token = self.controller.token()
         @minqlx.delay(0.8)
         def _pick():
-            if self.controller.token_valid(token, Phase.ACTIVE):
+            if self.controller.token_valid(token, Phase.ACTIVE) and self.target_bot_id is None:
                 self._choose_target()
         _pick()
 
-    def _handle_human_death(self, victim):
+    def _handle_human_death(self, victim, killer=None, data=None):
+        data = data if isinstance(data, dict) else {}
         if self.controller.phase in (Phase.COMPLETE, Phase.FAILED):
             return
         # Quake Live can emit a death while the joining client is moved onto
@@ -853,27 +1214,169 @@ class solo_arcade(minqlx.Plugin):
         self.director_runtime.human_died()
         self.player_deaths += 1
         if self.mode == "arena_run" and self.run:
-            if self.controller.phase == Phase.ACTIVE:
-                self.run.lives -= 1
-                save_state(STATE_FILE, self.run)
-                self.msg(f"^1LIFE LOST.^7 {max(0, self.run.lives)} lives remaining.")
-                if self.run.lives <= 0:
-                    self.run.complete = True; save_state(STATE_FILE, self.run)
-                    self._finish_mode(f"^1ARENA RUN OVER.^7 Reached round {self.run.round}.")
+            self.run.lives -= 1
+            save_state(STATE_FILE, self.run)
+            self.msg(f"^1LIFE LOST.^7 {max(0, self.run.lives)} lives remaining.")
+            if self.run.lives <= 0:
+                self.run.complete = True; save_state(STATE_FILE, self.run)
+                self._finish_mode(f"^1ARENA RUN OVER.^7 Reached round {self.run.round}.")
             return
-        if self.mode in ("horde", "boss_rush", "wipeout_solo", "gauntlet_run", "last_stand", "one_life", "movement_hunter", "predator"):
+        if self.mode == "wipeout_solo":
+            self.wipeout_lives -= 1
+            if self.wipeout_lives > 0:
+                self.msg(f"^1LIFE LOST.^7 {self.wipeout_lives} lives remaining.")
+                return
+            self._finish_mode(f"^1WIPEOUT OVER.^7 Squads wiped: {self.wipeout_round - 1}/5.")
+            self._spectate_after_death(victim)
+            return
+        if self.mode == "gun_game":
+            if is_player_object(killer) and is_bot(killer) and self._death_mod(data) == "GAUNTLET":
+                self._gun_game_humiliated(victim)
+            return
+        if self.mode in FATAL_DEATH_MODES:
             if self.mode == "horde" and self.horde: self.horde.player_died()
-            self._finish_mode(f"^1RUN OVER.^7 Kills: {self.kills}  Time: {time.time() - self.start_time:.1f}s")
+            self._finish_mode("^1RUN OVER.")
             self._spectate_after_death(victim)
         elif self.mode == "random_loadout":
             self.random_round += 1
 
-    def _finish_mode(self, message):
+    # ---------- run results, personal bests ----------
+    def _records_key(self):
+        key = f"{self.mode}:{self.difficulty}"
+        if self.mode == "arena_run":
+            key += f":len{self.length}"
+        return key
+
+    def _load_records(self):
+        try:
+            data = json.loads(RECORDS_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _records_entry(self):
+        entry = self._load_records().get(self._records_key())
+        return entry if isinstance(entry, dict) else {}
+
+    def _save_records(self, records):
+        try:
+            RECORDS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            temp = RECORDS_FILE.with_name(RECORDS_FILE.name + ".tmp")
+            temp.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            temp.replace(RECORDS_FILE)
+        except Exception as exc:
+            self._log(f"could not save records: {exc}")
+
+    def _progress(self):
+        """(label, value) describing how far this run got."""
+        elapsed = time.time() - self.start_time
+        if self.mode == "horde" and self.horde:
+            return "waves cleared", self.horde.wave - 1
+        if self.mode == "arena_run" and self.run:
+            return "rounds cleared", int(self.run.score)
+        if self.mode == "boss_rush":
+            return "bosses defeated", self.boss_round - 1
+        if self.mode == "wipeout_solo":
+            return "squads wiped", self.wipeout_round - 1
+        if self.mode == "gauntlet_run":
+            return "stages cleared", self.gauntlet_stage - 1
+        if self.mode == "gun_game" and self.gun_game:
+            return "weapon tiers", self.gun_game.index + (1 if self.gun_game.complete else 0)
+        if self.mode in ("bounty_hunt", "rocket_tag"):
+            return "targets", self.target_score
+        if self.mode == "movement_hunter":
+            return "seconds survived", int(min(MOVEMENT_HUNTER_SECONDS, elapsed if self.objective_live_at is None else time.time() - self.objective_live_at))
+        return "kills", self.kills
+
+    def _record_result(self, success):
+        """Update personal bests for this mode; returns summary lines."""
+        now = time.time()
+        elapsed = max(0.0, now - self.start_time)
+        label, value = self._progress()
+        records = self._load_records()
+        key = self._records_key()
+        entry = records.get(key) if isinstance(records.get(key), dict) else {}
+        entry["runs"] = int(entry.get("runs", 0)) + 1
+        if success:
+            entry["clears"] = int(entry.get("clears", 0)) + 1
+        notes = []
+
+        def better(stat, current, higher):
+            previous = entry.get(stat)
+            improved = previous is None or (current > previous if higher else current < previous)
+            if improved:
+                entry[stat] = current
+            return improved, previous
+
+        improved, previous = better("best_progress", value, True)
+        progress_record = improved and previous is not None
+        if progress_record:
+            notes.append(f"^2NEW BEST^7 {label} (was {previous})")
+        if success and self.mode in TIMED_GOAL_MODES:
+            improved, previous = better("best_time", round(elapsed, 2), False)
+            if improved:
+                notes.append(
+                    f"^2NEW BEST TIME^7 {format_duration(elapsed)}"
+                    + (f" (was {format_duration(previous)})" if previous is not None else "")
+                )
+            elif previous is not None:
+                notes.append(f"^7Best time: {format_duration(previous)}")
+            if self.mode == "speedrun_combat":
+                for kills, split in self.pending_splits.items():
+                    stat = f"split_{kills}"
+                    if entry.get(stat) is None or split < entry[stat]:
+                        entry[stat] = round(split, 2)
+        if self.mode == "last_stand":
+            survived = now - (self.objective_live_at or self.start_time)
+            improved, previous = better("best_survival", round(survived, 1), True)
+            if improved and previous is not None:
+                notes.append(f"^2NEW BEST^7 survival {format_duration(survived)}")
+        accuracy = self._accuracy_summary() if self.mode == "accuracy_trial" else None
+        if accuracy and success and accuracy["avg_ttk"]:
+            improved, previous = better("best_avg_ttk", round(accuracy["avg_ttk"], 3), False)
+            if improved and previous is not None:
+                notes.append(f"^2NEW BEST^7 average time-to-kill (was {previous:.2f}s)")
+        entry["last"] = {"success": bool(success), "progress": value, "kills": self.kills, "time": round(elapsed, 2), "at": now}
+        records[key] = entry
+        self._save_records(records)
+
+        headline = f"^6RESULT:^7 {value} {label}" if label != "kills" else "^6RESULT:^7"
+        headline += f" ^7| {self.kills} kills | {format_duration(elapsed)}"
+        if self.mode == "last_stand":
+            headline += f" | threat level {self.threat_level}"
+        if self.mode == "gun_game" and self.gun_game and self.gun_game.demotions:
+            headline += f" | {self.gun_game.demotions} demotions"
+        lines = [headline]
+        if accuracy:
+            lines.append(
+                f"^6LG:^7 {accuracy['hits']} hits, {accuracy['damage']} damage "
+                f"({accuracy['damage_per_kill']:.0f}/kill) | time-to-kill avg {accuracy['avg_ttk']:.2f}s, best {accuracy['best_ttk']:.2f}s"
+            )
+        if entry.get("best_progress") is not None and not progress_record:
+            lines.append(f"^7Personal best: {entry['best_progress']} {label} over {entry['runs']} runs")
+        lines.extend(notes)
+        return lines
+
+    def _finish_mode(self, message, success=False):
         if self.controller.phase in (Phase.COMPLETE, Phase.FAILED):
             return
+        lines = []
+        if not self.result_recorded:
+            self.result_recorded = True
+            try:
+                lines = self._record_result(bool(success))
+            except Exception as exc:
+                self._log(f"result recording failed: {exc}")
         self.controller.finish()
         self.clear_all_bots()
         self.msg(message)
+        for line in lines:
+            self.msg(line)
+        self.msg("^7Type ^3!again^7 to replay with a new seed.")
+        player = self.primary_player()
+        if player is not None:
+            try: player.center_print(message + ("\n" + lines[0] if lines else ""))
+            except Exception: pass
 
     def _schedule(self, delay, callback, required_phase):
         token = self.controller.token()
@@ -1015,13 +1518,14 @@ class solo_arcade(minqlx.Plugin):
             self.director_runtime.note_damage(target, attacker, damage)
         except Exception as exc:
             self._log(f"director damage observation failed: {exc}")
-        if self.mode != "arena_run" or not self.run:
-            return
         if not is_player_object(target) or not is_player_object(attacker):
             return
         if attacker.id == target.id:
             return
         if is_bot(attacker) and not is_bot(target):
+            # Plan damage multipliers apply to every mode that authors one
+            # (Arena Run rounds, Boss Rush/Gauntlet bosses, Last Stand threat);
+            # previously only Arena Run consumed them.
             self.last_hurt_time[target.id] = time.time()
             multiplier = max(0.0, float((self.current_plan or {}).get("damage_mult", 1.0)) - 1.0)
             bonus = max(0, int(round(damage * multiplier)))
@@ -1031,10 +1535,15 @@ class solo_arcade(minqlx.Plugin):
             return
         if is_bot(attacker) or is_bot(target) is False:
             return
-        effects = upgrade_effects(self.run)
-        multiplier = float(effects.get("damage_mult", 0))
         try: mod = int(means_of_death)
         except Exception: return
+        if self.mode == "accuracy_trial":
+            self._accuracy_note_hit(target, damage, mod)
+            return
+        if self.mode != "arena_run" or not self.run:
+            return
+        effects = upgrade_effects(self.run)
+        multiplier = float(effects.get("damage_mult", 0))
         rocket_mods = {getattr(minqlx, "MOD_ROCKET", -100), getattr(minqlx, "MOD_ROCKET_SPLASH", -101)}
         lightning_mods = {getattr(minqlx, "MOD_LIGHTNING", -102), getattr(minqlx, "MOD_LIGHTNING_DISCHARGE", -103)}
         rail_mods = {getattr(minqlx, "MOD_RAILGUN", -104), getattr(minqlx, "MOD_RAILGUN_HEADSHOT", -105)}
@@ -1096,6 +1605,10 @@ class solo_arcade(minqlx.Plugin):
                     player.center_print("^7Solo runs stay in warmup; ready-up is not needed.")
                 except Exception:
                     pass
+                return minqlx.RET_STOP_ALL
+            if verb == "qlpick":
+                if len(parts) >= 2:
+                    self.cmd_pick(player, ["!pick", parts[1]], None)
                 return minqlx.RET_STOP_ALL
             if verb != "qldash":
                 return
@@ -1177,6 +1690,10 @@ class solo_arcade(minqlx.Plugin):
                         self.last_regen_tick[player.id] = now
             except Exception:
                 continue
+        if now >= self.next_threat_check:
+            self.next_threat_check = now + 1.0
+            self._update_last_stand_threat(now)
+        self._tick_predator_hunger(now)
         try:
             self.director_runtime.tick()
         except Exception as exc:
@@ -1194,7 +1711,23 @@ class solo_arcade(minqlx.Plugin):
             f"director=[{self.director_runtime.summary()}]"
         )
 
+    def cmd_best(self, player, msg, channel):
+        entry = self._records_entry()
+        if not entry:
+            player.tell(f"^7No records yet for {self.mode.replace('_', ' ')} ({self.difficulty})."); return
+        label, _value = self._progress()
+        parts = [f"best {entry.get('best_progress', 0)} {label}", f"{entry.get('runs', 0)} runs"]
+        if entry.get("clears"):
+            parts.append(f"{entry['clears']} clears")
+        if isinstance(entry.get("best_time"), (int, float)):
+            parts.append(f"best time {format_duration(entry['best_time'])}")
+        if isinstance(entry.get("best_survival"), (int, float)):
+            parts.append(f"best survival {format_duration(entry['best_survival'])}")
+        if isinstance(entry.get("best_avg_ttk"), (int, float)):
+            parts.append(f"best avg TTK {entry['best_avg_ttk']:.2f}s")
+        player.tell(f"^6RECORDS ({self.mode.replace('_', ' ')}, {self.difficulty}):^7 " + ", ".join(parts))
+
     def cmd_help(self, player, msg, channel):
-        player.tell("^6Solo Engine v5:^7 !run shows lifecycle state; !dash left/right is a movement fallback.")
+        player.tell("^6Solo Engine v5:^7 !run shows lifecycle state; !again replays with a new seed; !best shows your records; !dash left/right is a movement fallback.")
         if self.mode == "arena_run":
-            player.tell("^7Arena Run: use ^3!pick 1/2/3 ^7and ^3!upgrades^7 between rounds.")
+            player.tell("^7Arena Run: press ^3F5/F6/F7^7 (or ^3!pick 1/2/3^7) and ^3!upgrades^7 between rounds.")
