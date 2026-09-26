@@ -309,6 +309,17 @@ Goal: make random weapons interesting without secretly countering them.
 - vary roles each loadout round;
 - no hard-counter reaction immediately after a loadout roll.
 
+## Spawn Director (5.0-alpha-director1)
+
+Engine capabilities and limits behind this are recorded in `docs/DIRECTOR_CAPABILITIES.md`.
+
+- **Learned spawn points.** Every engine spawn (human or bot) is recorded per map in `solo_runtime/spawn_points.json` before anything relocates it. Points within 72u merge; 96 per map maximum.
+- **Placement.** With at least 4 learned points, a fresh enemy spawn is kept when it is already fair and useful (between 700u and the profile's far distance, and ≥96u from every player). Otherwise it moves to the best learned point near the profile's engage distance. It never goes within 700u of the player (fairness law 4) and never overlaps anyone (the engine's KillBox does not re-run). During a recovery window, new enemies enter at the far edge of the band. Front-liners avoid appearing behind a moving player.
+- **Flankers.** In Horde, Arena Run, Gauntlet and Wipeout, squads of 4+ send a third of the squad (non-boss) 3–6 s after the front line, by difficulty. The front line alone activates the objective; an auto-clear objective waits for inbound flankers; a flanker that never spawns is released after 8 s. When the player is moving, flankers prefer points behind or beside them. "FLANKERS INBOUND" announces them.
+- **Recovery.** Idle-bot recovery is unchanged (kick and replace), but the replacement now goes through placement, so it re-enters in the engagement band instead of wherever the engine picks.
+- **Audit.** Every placement decision is written to `director_actions.jsonl` as a `spawn_placement` event; `!director` shows learned points and placement counts.
+- **Opt-out.** Session `director: {"spawn_placement": false, "flankers": false}`.
+
 ## Architecture
 
 Proposed modules:

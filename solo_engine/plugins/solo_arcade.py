@@ -21,6 +21,7 @@ try:  # Runtime: minqlx loads this inside its plugin package.
     from .modes.horde import HordeState
     from .solo_controller import Phase, SoloController
     from .director_runtime import DirectorRuntime
+    from .spawn_director import PlacementRequest, SpawnPointBook, as_vec, choose_spawn
     from .solo_core import (
         BOT_ROSTER, RARITY_COLOR, UPGRADE_BY_ID, advance_round, load_state,
         new_state, pick_upgrade, roll_upgrade_choices, round_plan, save_state,
@@ -31,6 +32,7 @@ except ImportError:  # Direct local/unit-test import fallback.
     from modes.horde import HordeState
     from solo_controller import Phase, SoloController
     from director_runtime import DirectorRuntime
+    from spawn_director import PlacementRequest, SpawnPointBook, as_vec, choose_spawn
     from solo_core import (
         BOT_ROSTER, RARITY_COLOR, UPGRADE_BY_ID, advance_round, load_state,
         new_state, pick_upgrade, roll_upgrade_choices, round_plan, save_state,
@@ -41,7 +43,7 @@ SESSION_FILE = Path.home() / ".config/quake-live-launcher/solo_session.json"
 STATE_FILE = Path.home() / ".config/quake-live-launcher/arena_run_state_v5.json"
 RUNTIME_DIR = Path.home() / ".local/share/quake-live-launcher/solo_runtime"
 PLUGIN_READY_FILE = RUNTIME_DIR / "plugin_ready.json"
-PLUGIN_VERSION = "5.0-alpha-modes1"
+PLUGIN_VERSION = "5.0-alpha-director1"
 
 # Forfeit root cause (v5.0-alpha-warmup1):
 #
@@ -99,6 +101,15 @@ PREDATOR_HUNGER_FLOOR = 10      # hunger never kills on its own
 SPEEDRUN_SPLITS = (5, 10)
 TARGET_HASTE_SECONDS = 600      # Haste smoke trail marks bounty targets
 BOT_NAME_RESERVATION_SECONDS = 30.0
+
+SPAWN_POINTS_FILE = RUNTIME_DIR / "spawn_points.json"
+# Squads of 4+ in these modes send a third of the squad as flankers that
+# arrive a few seconds after the front line (learned spawn points let the
+# Director bring them in from the player's sides/rear when moving).
+FLANK_MODES = {"horde", "arena_run", "gauntlet_run", "wipeout_solo"}
+FLANK_MIN_SQUAD = 4
+FLANK_DELAY = {"easy": 6.0, "normal": 4.5, "hard": 3.5, "nightmare": 3.0}
+FLANK_ARRIVAL_TIMEOUT = 8.0     # an addbot that never spawns stops blocking clears
 
 
 def format_duration(seconds) -> str:
@@ -162,6 +173,9 @@ class solo_arcade(minqlx.Plugin):
 
         self.controller = SoloController(self.mode)
         self.player_id = None
+        self.spawn_book = SpawnPointBook(SPAWN_POINTS_FILE)
+        self.placement_rng = random.Random(self.seed ^ 0x5A17)
+        self._read_director_settings()
         self._reset_mode_state()
 
         self.director_runtime = DirectorRuntime(self, self.mode, self.difficulty, self.seed, RUNTIME_DIR)
@@ -243,6 +257,9 @@ class solo_arcade(minqlx.Plugin):
         self.acc_first_hit = {}
         self.acc_ttk = []
         self.pending_splits = {}
+        self.flank_names = {}
+        self.flank_announced = False
+        self.placement_stats = {"moved": 0, "kept": 0, "no_fair_point": 0, "too_few_points": 0, "learned": 0}
 
         self.last_damage_time = {}
         self.last_hurt_time = {}
@@ -255,6 +272,14 @@ class solo_arcade(minqlx.Plugin):
         self.airborne = set()
         self.prev_vz = {}
         self.ground_ticks = {}
+
+    def _read_director_settings(self):
+        settings = self.session.get("director") if isinstance(self.session.get("director"), dict) else {}
+        self.spawn_placement_enabled = bool(settings.get("spawn_placement", True))
+        self.flankers_enabled = bool(settings.get("flankers", True))
+
+    def _console_kick(self, client_id):
+        minqlx.console_command(f"kick {int(client_id)}")
 
     def _load_session(self):
         try:
@@ -329,6 +354,10 @@ class solo_arcade(minqlx.Plugin):
 
     def handle_unload(self, plugin):
         try:
+            self.spawn_book.save(force=True)
+        except Exception:
+            pass
+        try:
             PLUGIN_READY_FILE.unlink(missing_ok=True)
         except Exception:
             pass
@@ -341,6 +370,7 @@ class solo_arcade(minqlx.Plugin):
         minqlx.allow_single_player(True)
         self._configure_engine()
         self.airborne.clear(); self.dash_used.clear(); self.ground_ticks.clear()
+        self.spawn_book.save(force=True)
         self._log(f"map={map_name} factory={factory} phase={self.controller.phase.value} game_state={self.game_state()}")
 
     # ---------- permanent-warmup sandbox (anti-forfeit) ----------
@@ -424,6 +454,7 @@ class solo_arcade(minqlx.Plugin):
         self.controller.enemy_ids.clear()
         self.preactive_dead_ids.clear()
         self.pending_bot_names = []
+        self.flank_names = {}
         if hasattr(self, "director_runtime"):
             self.director_runtime.reset()
 
@@ -475,10 +506,59 @@ class solo_arcade(minqlx.Plugin):
         self.director_runtime.begin_objective()
         self.pending_replacements = 0
         names = [self._reserve_bot_name(name) for name in names]
-        token = self.controller.begin_objective(len(names), auto_clear=auto_clear)
-        for index, name in enumerate(names):
+        front, flank = self._split_squad(names)
+        token = self.controller.begin_objective(len(front), auto_clear=auto_clear)
+        self.flank_names = {}
+        self.flank_announced = False
+        if flank:
+            self.controller.expect_reinforcements(len(flank))
+        for index, name in enumerate(front):
             self._add_bot_later(name, skill, index * 0.15, token)
+        delay = FLANK_DELAY.get(self.difficulty, FLANK_DELAY["normal"])
+        for index, name in enumerate(flank):
+            self.flank_names[name] = token
+            self._add_flanker_later(name, skill, delay + index * 0.4, token)
         return token
+
+    def _split_squad(self, names):
+        """Front line activates the objective; the rest arrive later as flankers."""
+        if (
+            not self.flankers_enabled
+            or self.mode not in FLANK_MODES
+            or len(names) < FLANK_MIN_SQUAD
+            or (self.current_plan or {}).get("boss")
+        ):
+            return list(names), []
+        count = max(1, len(names) // 3)
+        return list(names[:-count]), list(names[-count:])
+
+    def _add_flanker_later(self, name, skill, delay, token):
+        @minqlx.delay(delay)
+        def _add():
+            if self.controller.token_valid(token, Phase.PREPARING, Phase.ACTIVE) and name in self.flank_names:
+                minqlx.console_command(f"addbot {name} {clamp(int(skill), 1, 5)} blue")
+                self._expire_flanker_later(name, token)
+            else:
+                self._drop_flanker(name, token)
+        _add()
+
+    def _expire_flanker_later(self, name, token):
+        @minqlx.delay(FLANK_ARRIVAL_TIMEOUT)
+        def _expire():
+            if name in self.flank_names and self.flank_names.get(name) == token:
+                self._log(f"flanker {name} never spawned; releasing its slot")
+                self._drop_flanker(name, token)
+        _expire()
+
+    def _drop_flanker(self, name, token):
+        """Forget a flanker that will never arrive, clearing the objective if it was the last."""
+        if self.flank_names.get(name) != token:
+            self._release_bot_name(name)
+            return
+        self.flank_names.pop(name, None)
+        self._release_bot_name(name)
+        if self.controller.token() == token and self.controller.reinforcement_cancelled():
+            self._objective_cleared()
 
     def _add_bot_later(self, name, skill, delay, token):
         @minqlx.delay(delay)
@@ -543,15 +623,31 @@ class solo_arcade(minqlx.Plugin):
     def handle_player_spawn(self, player):
         if not is_player_object(player):
             return
+        # Learn from the engine's own choice before anything relocates it.
+        self._learn_spawn(player)
         if is_bot(player):
             self._put_team(player, "blue")
-            self._release_bot_name(clean_name(player))
+            name = clean_name(player).lower()
+            self._release_bot_name(name)
             if player.id in self.preactive_dead_ids:
                 self._kick_bot_id(player.id)
                 return
-            activated = self.controller.enemy_spawned(player.id)
+            flanker = name in self.flank_names
+            if flanker:
+                self.flank_names.pop(name, None)
+                activated = False
+                if not self.controller.reinforcement_arrived(player.id):
+                    self._log(f"late flanker {name} id={player.id} arrived after its objective; removing")
+                    self._kick_bot_id(player.id)
+                    return
+            else:
+                activated = self.controller.enemy_spawned(player.id)
             role = self.director_runtime.bot_spawned(player)
             self._apply_bot_loadout(player)
+            self._place_bot(player, flank=flanker)
+            if flanker and not self.flank_announced:
+                self.flank_announced = True
+                self.msg("^3FLANKERS INBOUND")
             self._log(
                 f"enemy spawn id={player.id} fulfilled={self.controller.fulfilled_spawns}/"
                 f"{self.controller.expected_spawns} alive={len(self.controller.enemy_ids)} "
@@ -575,6 +671,85 @@ class solo_arcade(minqlx.Plugin):
         if not self.mode_started and self.controller.phase == Phase.PREPARING:
             self.mode_started = True
             self._start_selected_mode()
+
+    # ---------- spawn Director ----------
+    def _learn_spawn(self, player):
+        try:
+            if self.spawn_book.learn(self.current_map_name(), player.position()):
+                self.placement_stats["learned"] += 1
+                self.spawn_book.save()
+        except Exception as exc:
+            self._log(f"spawn learning failed: {exc}")
+
+    def _place_bot(self, bot, *, flank=False):
+        """Move a fresh enemy spawn to a fair, useful learned spawn point.
+
+        Keeps the engine's choice when it is already in the Director's distance
+        band and clear of other players. Never within MIN_PLAYER_DISTANCE of the
+        player, never overlapping anyone (the engine's KillBox does not re-run).
+        """
+        if not self.spawn_placement_enabled or self.controller.phase not in (Phase.PREPARING, Phase.ACTIVE):
+            return None
+        human = self.primary_player()
+        if human is None or not getattr(human, "is_alive", False):
+            return None
+        try:
+            human_pos = as_vec(human.position())
+            human_vel = as_vec(human.velocity())
+            engine_pos = as_vec(bot.position())
+            occupants = []
+            for other in self.human_players() + self.bot_players():
+                if other.id == bot.id:
+                    continue
+                pos = as_vec(other.position())
+                if pos is not None:
+                    occupants.append(pos)
+        except Exception as exc:
+            self._log(f"spawn placement skipped: {exc}")
+            return None
+        if human_pos is None:
+            return None
+        profile = self.director_runtime.director.profile
+        max_distance = max(float(profile.far_distance), float(profile.engage_distance) * 1.5)
+        preferred = float(profile.engage_distance) * 1.05
+        holding = False
+        try:
+            holding = bool(self.director_runtime.director.should_hold_reinforcements(time.time()))
+        except Exception:
+            pass
+        if holding:
+            # Recovery window: new enemies enter at the far edge of the band.
+            preferred = max_distance * 0.9
+        request = PlacementRequest(
+            human_pos=human_pos, human_vel=human_vel, occupants=occupants,
+            preferred=preferred, max_distance=max_distance, flank=bool(flank),
+        )
+        decision = choose_spawn(self.spawn_book.points(self.current_map_name()), engine_pos, request, rng=self.placement_rng)
+        if decision.moved and decision.point is not None:
+            try:
+                bot.position(x=decision.point.x, y=decision.point.y, z=decision.point.z)
+                bot.velocity(reset=True)
+            except Exception as exc:
+                self._log(f"spawn placement failed for id={bot.id}: {exc}")
+                return None
+            self.placement_stats["moved"] += 1
+        elif decision.reason == "engine_choice_ok":
+            self.placement_stats["kept"] += 1
+        else:
+            self.placement_stats[decision.reason] = self.placement_stats.get(decision.reason, 0) + 1
+        try:
+            self.director_runtime.record_spawn_placement(bot, decision, flank=bool(flank), holding=holding)
+        except Exception:
+            pass
+        return decision
+
+    def spawn_summary(self):
+        points = len(self.spawn_book.points(self.current_map_name()))
+        stats = self.placement_stats
+        return (
+            f"spawn points on this map {points}; placed {stats['moved']}, kept engine choice {stats['kept']}, "
+            f"no fair point {stats.get('no_fair_point', 0)}, still learning {stats.get('too_few_points', 0)}"
+        )
 
     def handle_player_disconnect(self, player, reason):
         if is_player_object(player) and not is_bot(player) and player.id == self.player_id:

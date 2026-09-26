@@ -82,7 +82,15 @@ class PackageTests(unittest.TestCase):
     def test_director_runtime_is_packaged_and_selected(self):
         start=(ROOT/'solo_engine/start_solo.sh').read_text()
         for token in ('solo_directed.py','solo_director.py','director_runtime.py','director_learning.py'): self.assertIn(token,start)
-        self.assertIn('+set qlx_plugins solo_directed',start)
+        self.assertIn('PLUGINS="${QLL_PLUGINS:-solo_directed}"',start)
+        self.assertEqual(start.count('+set qlx_plugins "$PLUGINS"'),2)
+        setup=(ROOT/'solo_engine/setup_solo_engine.sh').read_text()
+        for module in ('spawn_director.py','solo_probe.py'):
+            self.assertIn(module,start); self.assertIn(module,setup)
+            self.assertTrue((ROOT/'solo_engine/plugins'/module).is_file())
+        probe=(ROOT/'solo_engine/run_director_probe.sh')
+        self.assertTrue(probe.is_file()); self.assertTrue(probe.stat().st_mode & 0o111)
+        self.assertIn('QLL_PLUGINS=solo_probe',probe.read_text())
         directed=(ROOT/'solo_engine/plugins/solo_directed.py').read_text()
         director=(ROOT/'solo_engine/plugins/solo_director.py').read_text()
         runtime=(ROOT/'solo_engine/plugins/director_runtime.py').read_text()

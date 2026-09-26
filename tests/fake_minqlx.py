@@ -7,6 +7,17 @@ import types
 from types import SimpleNamespace
 
 
+WEAPON_KEYS=("g","mg","sg","gl","rl","lg","rg","pg","bfg","gh","ng","pl","cg","hmg")
+POWERUP_KEYS=("quad","battlesuit","haste","invisibility","regeneration","invulnerability")
+# id -> (classname, effect) for the fake item table used by probe tests.
+FAKE_ITEMS={
+    1:("item_armor_shard",{"armor":5}), 2:("item_armor_combat",{"armor":50}),
+    5:("item_health",{"health":25}), 7:("item_health_mega",{"health":100}),
+    12:("weapon_rocketlauncher",{"weapon":"rl","ammo":("rl",10)}),
+    20:("ammo_rockets",{"ammo":("rl",5)}), 26:("item_quad",{"powerup":"quad"}),
+}
+
+
 class FakePlayer:
     def __init__(self, server, client_id, name, steam_id, team="free"):
         self.server = server
@@ -24,6 +35,18 @@ class FakePlayer:
         self._weapon = 2
         self.tells = []
         self.centers = []
+        self.cvars = {}
+        self.holdable = None
+        self._powerups = {}
+
+    @property
+    def state(self):
+        weapons=SimpleNamespace(**{k: bool(self._weapons.get(k)) for k in WEAPON_KEYS})
+        ammo=SimpleNamespace(**{k: int(getattr(self._ammo,k,0) or 0) for k in WEAPON_KEYS})
+        powerups=SimpleNamespace(**{k: bool(self._powerups.get(k)) for k in POWERUP_KEYS})
+        return SimpleNamespace(is_alive=self.is_alive, health=self.health, armor=self.armor, weapons=weapons,
+                               ammo=ammo, powerups=powerups, holdable=self.holdable,
+                               position=self._position, velocity=self._velocity)
 
     def put(self, team): self.team = team
     def kick(self, reason=""): self.server.players.pop(self.id, None)
@@ -81,6 +104,11 @@ class FakeServer:
         self._counter=itertools.count(); self.now=0.0
         self.game=FakeGame(self)
         self.plugin=None; self.single_player_allowed=False
+        # Optional engine spawn points: bots cycle through these on add_bot,
+        # mirroring the engine choosing a spawn before the spawn hook fires.
+        self.spawn_points=[]; self._spawn_index=0
+        # Probe support: bot catalog for botlist/loader output, items, lures.
+        self.bot_catalog={}; self.item_count=30; self.dropped=[]; self.lure_behavior="ignore"
     def schedule(self, delay, func, args, kwargs): heapq.heappush(self.scheduler,(self.now+float(delay),next(self._counter),func,args,kwargs))
     def run_next(self):
         if not self.scheduler: return False
@@ -95,9 +123,17 @@ class FakeServer:
         self.now=target
     def add_human(self, name="Human"):
         p=FakePlayer(self,0,name,76_561_198_000_000_001,"free"); self.players[p.id]=p; return p
-    def add_bot(self, name, team="blue"):
+    def add_bot(self, name, team="blue", skill="3"):
         cid=self.next_client_id; self.next_client_id+=1
-        p=FakePlayer(self,cid,name,90_000_000_000_000_000+cid,team); self.players[cid]=p; self.emit("player_spawn",p); return p
+        p=FakePlayer(self,cid,name,90_000_000_000_000_000+cid,team); self.players[cid]=p
+        aifile=self.bot_catalog.get(str(name).lower(), f"bots/{str(name).lower()}_c.c")
+        p.cvars={"skill": f"{float(skill):.2f}", "characterfile": aifile}
+        if self.bot_catalog:
+            self.print_console(f"loaded skill {int(float(skill)+0.5)} from {aifile}")
+        if self.spawn_points:
+            x,y,z=self.spawn_points[self._spawn_index % len(self.spawn_points)]; self._spawn_index+=1
+            p.position(x=x,y=y,z=z)
+        self.emit("player_spawn",p); return p
     def emit(self,event,*args):
         result=None
         for handler in list(self.hooks.get(event,[])): result=handler(*args)
@@ -108,11 +144,39 @@ class FakeServer:
         return "red" not in teams or "blue" not in teams
     def force_match_start(self):
         self.game.match_forced=True; self.emit("game_countdown")
+    def print_console(self, text):
+        self.console.append(text); self.emit("console_print", text)
+    def spawn_item(self, item_id, x, y, z):
+        if not 1 <= int(item_id) < self.item_count: raise ValueError(f"item_id needs to be a number from 1 to {self.item_count-1}.")
+        entry=FAKE_ITEMS.get(int(item_id)); pos=(float(x),float(y),float(z))
+        for player in self.players.values():
+            p=player._position
+            if player.is_alive and player.team != "spectator" and entry and ((p.x-pos[0])**2+(p.y-pos[1])**2+(p.z-pos[2])**2) ** 0.5 < 64:
+                self._pickup(player, entry[1]); return True
+        self.dropped.append((int(item_id),pos))
+        if entry and entry[0]=="item_health_mega" and self.lure_behavior=="pickup":
+            bots=[b for b in self.players.values() if b.steam_id > 90_000_000_000_000_000]
+            if bots:
+                self.schedule(3.0, self._walk_to_lure, (bots[0], pos, entry[1]), {})
+        return True
+    def _walk_to_lure(self, bot, pos, effect):
+        bot.position(x=pos[0],y=pos[1],z=pos[2]); self._pickup(bot, effect)
+    def _pickup(self, player, effect):
+        if "health" in effect: player.health=min(200, player.health+effect["health"])
+        if "armor" in effect: player.armor=min(200, player.armor+effect["armor"])
+        if "weapon" in effect: player._weapons[effect["weapon"]]=True
+        if "ammo" in effect:
+            key,amount=effect["ammo"]; setattr(player._ammo,key,getattr(player._ammo,key,0)+amount)
+        if "powerup" in effect: player._powerups[effect["powerup"]]=True
+    def remove_dropped_items(self): self.dropped=[]; return True
     def death(self,victim,killer=None,data=None): victim.is_alive=False; self.emit("death",victim,killer,data or {})
     def console_command(self, command):
         self.commands.append(command); parts=str(command).split()
         if not parts: return
-        if parts[0]=="addbot" and len(parts)>=2: self.add_bot(parts[1],parts[3] if len(parts)>=4 else "free")
+        if parts[0]=="addbot" and len(parts)>=2: self.add_bot(parts[1],parts[3] if len(parts)>=4 else "free",parts[2] if len(parts)>=3 else "3")
+        elif parts[0]=="botlist":
+            self.print_console("name             model            aifile              funname")
+            for bot_name,aifile in self.bot_catalog.items(): self.print_console(f"{bot_name:<16} {bot_name:<16} {aifile:<20} {bot_name}")
         elif parts[0]=="kick" and len(parts)>=2:
             try: self.players.pop(int(parts[1]),None)
             except Exception: pass
@@ -154,7 +218,10 @@ def install_fake_minqlx(server: FakeServer):
         def set_cvar(cls,name,value,flags=0): server.cvars[name]=str(value); return True
         @classmethod
         def msg(cls,message,**kwargs): server.messages.append(message)
+        @classmethod
+        def players(cls): return list(server.players.values())
     def allow_single_player(value): server.single_player_allowed=bool(value)
     module.Plugin=Plugin; module.delay=delay; module.allow_single_player=allow_single_player
-    module.console_command=server.console_command; module.console_print=lambda text: server.console.append(text)
+    module.console_command=server.console_command; module.console_print=server.print_console
+    module.spawn_item=server.spawn_item; module.remove_dropped_items=server.remove_dropped_items
     sys.modules["minqlx"]=module; return module

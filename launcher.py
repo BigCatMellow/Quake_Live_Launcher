@@ -29,14 +29,15 @@ if _WAS_MAIN:
 exec(compile(_SOURCE, str(_BASE / "launcher_impl.py"), "exec"), globals(), globals())
 globals()["__name__"] = _ORIGINAL_NAME
 
-APP_VERSION = "5.0-alpha-modes1"
+APP_VERSION = "5.0-alpha-director1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
 SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"
 # Must match solo_directed.HOTLOAD_PROTOCOL. Protocol 2 = permanent-warmup
-# anti-forfeit sandbox; 3 = mode overhaul (!again, F5-F7 picks, records).
+# anti-forfeit sandbox; 3 = mode overhaul (!again, F5-F7 picks, records);
+# 4 = spawn Director (learned spawn points, placement, flankers).
 # A server advertising an older protocol is restarted instead of reused.
-SOLO_HOTLOAD_PROTOCOL = 3
+SOLO_HOTLOAD_PROTOCOL = 4
 GITHUB_DEBUG_REPO = "BigCatMellow/Quake_Live_Launcher"
 GITHUB_DEBUG_OWNER = "BigCatMellow"
 SOLO_GITHUB_DEBUG_STATUS_FILE = SOLO_RUNTIME_DIR / "last_github_debug.json"

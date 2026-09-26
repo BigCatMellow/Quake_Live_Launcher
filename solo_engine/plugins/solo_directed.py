@@ -50,9 +50,9 @@ MATCH_REQUEST_FILE = RUNTIME_DIR / "match_request.json"
 MATCH_STATUS_FILE = RUNTIME_DIR / "match_status.json"
 HOTLOAD_READY_FILE = RUNTIME_DIR / "hotload_ready.json"
 # Protocol 2 = permanent-warmup sandbox; 3 = mode overhaul (!again, F5-F7
-# picks, records). A still-running older server must be restarted, never
-# hot-loaded into.
-HOTLOAD_PROTOCOL = 3
+# picks, records); 4 = spawn Director. A still-running older server must be
+# restarted, never hot-loaded into.
+HOTLOAD_PROTOCOL = 4
 MATCH_STATES = {"countdown", "in_progress"}
 
 
@@ -213,6 +213,7 @@ class solo_directed(solo_arcade):
         self.clear_all_bots()
 
         self.session = dict(session)
+        self._read_director_settings()
         self.mode = new_mode
         self.seed = int(session.get("seed", int(time.time())))
         self.skill = clamp(int(session.get("skill", 3)), 1, 5)
@@ -231,6 +232,7 @@ class solo_directed(solo_arcade):
         # One shared reset keeps hot-load in lockstep with a fresh plugin.
         self._reset_mode_state()
         self.director_runtime = DirectorRuntime(self, self.mode, self.difficulty, self.seed, RUNTIME_DIR)
+        self.placement_rng.seed(self.seed ^ 0x5A17)
         self.active_match_request_id = str(request_id)
 
         self.controller.wait_for_player()
@@ -295,6 +297,7 @@ class solo_directed(solo_arcade):
             player.tell("^7Roles: " + ", ".join(f"{name} x{count}" for name, count in sorted(roles.items())))
         if runtime.director.should_hold_reinforcements(runtime.now()):
             player.tell("^3Director recovery window:^7 holding future reinforcements briefly.")
+        player.tell("^7Spawns: " + self.spawn_summary())
         player.tell(
             "^7Learning: pressure shift "
             f"{runtime.learning.pressure_shift():+.1f}; actions and outcomes are logged for review."

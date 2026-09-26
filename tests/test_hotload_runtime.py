@@ -69,7 +69,7 @@ class HotLoadRuntimeTests(unittest.TestCase):
         runtime = self.harness.home / ".local/share/quake-live-launcher/solo_runtime"
         marker = json.loads((runtime / "hotload_ready.json").read_text())
         self.assertTrue(marker["ready"])
-        self.assertEqual(marker["protocol"], 3)
+        self.assertEqual(marker["protocol"], 4)
         self.assertEqual(marker["pid"], os.getpid())
         self.assertEqual(marker["mode"], "horde")
         plugin.handle_unload(plugin)
@@ -115,7 +115,7 @@ class HotLoadRuntimeTests(unittest.TestCase):
         self.assertEqual(ready["mode"], "gun_game")
         hotload = json.loads((runtime / "hotload_ready.json").read_text())
         self.assertEqual(hotload["mode"], "gun_game")
-        self.assertEqual(hotload["protocol"], 3)
+        self.assertEqual(hotload["protocol"], 4)
         status = json.loads((runtime / "match_status.json").read_text())
         self.assertEqual(status["request_id"], request_id)
         self.assertEqual(status["state"], "loading")

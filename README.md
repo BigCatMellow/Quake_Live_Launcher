@@ -176,6 +176,30 @@ The launcher temporarily wraps the keys currently bound to `+moveleft` and
 F5/F6/F7 to Arena Run upgrade picks, then restores the original binds after
 Quake closes.
 
+## Director
+
+The Director manages encounters without aiming or firing for bots (see
+`docs/DIRECTOR_DESIGN.md`). Since 5.0-alpha-director1 it also:
+
+- learns each map's spawn points from real spawns and moves enemy spawns that land
+  on top of you to fair positions in its engagement band;
+- sends part of larger squads as delayed flankers that prefer your sides and rear.
+
+### Director capability probe
+
+Some Director features depend on Quake Live behavior that can only be checked on a
+real server (custom bot personalities, fractional bot skill, item IDs, whether bots
+chase dropped items). Run once:
+
+```bash
+bash ~/.local/share/quake-live-launcher/solo_engine/run_director_probe.sh
+```
+
+It takes about two minutes, restores your Solo session afterwards, and writes
+`~/.local/share/quake-live-launcher/solo_runtime/director_probe.json`. Add `--watch`
+to spectate it in Quake Live. What was verified and why is in
+`docs/DIRECTOR_CAPABILITIES.md`.
+
 ## Map recommendations
 
 The launcher rates curated maps by mode and prefers the best installed match for
