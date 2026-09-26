@@ -99,4 +99,4 @@ This is now the preferred evidence path for the instant-forfeit blocker.
 - [ ] Real Mint: Director player/playbook memory survives and records `switched` sessions correctly.
 - [ ] Decide separately whether native Arcade should migrate onto the persistent local server model.
 
-Until those are confirmed, PR #1 remains draft.
+Until those are confirmed, the instant-forfeit issue remains a release blocker and must not be marked resolved from CI/simulation alone.
