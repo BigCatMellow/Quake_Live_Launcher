@@ -104,7 +104,12 @@ if command -v ldd >/dev/null 2>&1; then
   ldd "$SHINQLX_LIB" >>"$LOG" 2>&1 || true
 fi
 
-log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox + encounter Director"
+# Anti-forfeit contract: the scripted TDM sandbox stays in WARMUP for its whole
+# life. Quake Live's forfeit rules (e.g. a live match with an empty BLUE team)
+# only run after warmup ends, and the Solo plugin owns scoring/completion.
+# These are set AFTER +exec server.cfg so an older installed server.cfg that
+# still says g_doWarmup "0" cannot switch the match layer back on.
+log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox (permanent warmup) + encounter Director"
 (
   cd "$QLDS" || exit 91
   export VIRTUAL_ENV="$VENV"
@@ -123,15 +128,16 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox + encoun
     +set qlx_soloMode "$MODE" \
     +set zmq_stats_enable 1 \
     +set zmq_stats_port "$PORT" \
-    +set g_doWarmup 0 \
-    +set g_warmup 0 \
-    +set sv_warmupReadyPercentage 0 \
     +set bot_minplayers 0 \
     +set g_friendlyFire 0 \
     +set g_teamForceBalance 0 \
     +set g_training 1 \
     +exec server.cfg \
     +set qlx_plugins solo_directed \
+    +set g_doWarmup 1 \
+    +set sv_warmupReadyPercentage 1 \
+    +set g_warmupReadyDelay 0 \
+    +set g_warmupDelay 0 \
     +map "$MAP" tdm
 ) >>"$LOG" 2>&1 &
 pid=$!

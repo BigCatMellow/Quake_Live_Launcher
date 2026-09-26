@@ -21,6 +21,7 @@ try:
         DirectorRuntime,
         GunGameState,
         HordeState,
+        PLUGIN_VERSION,
         Phase,
         SoloController,
         clamp,
@@ -35,6 +36,7 @@ except ImportError:
         DirectorRuntime,
         GunGameState,
         HordeState,
+        PLUGIN_VERSION,
         Phase,
         SoloController,
         clamp,
@@ -46,6 +48,10 @@ except ImportError:
 MATCH_REQUEST_FILE = RUNTIME_DIR / "match_request.json"
 MATCH_STATUS_FILE = RUNTIME_DIR / "match_status.json"
 HOTLOAD_READY_FILE = RUNTIME_DIR / "hotload_ready.json"
+# Protocol 2 = permanent-warmup sandbox.  A still-running protocol-1 server
+# (old forfeit-prone plugin) must be restarted, never hot-loaded into.
+HOTLOAD_PROTOCOL = 2
+MATCH_STATES = {"countdown", "in_progress"}
 
 
 class solo_directed(solo_arcade):
@@ -67,9 +73,10 @@ class solo_directed(solo_arcade):
             RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
             payload = {
                 "ready": True,
-                "protocol": 1,
+                "protocol": HOTLOAD_PROTOCOL,
                 "pid": os.getpid(),
                 "mode": self.mode,
+                "plugin_version": PLUGIN_VERSION,
                 "time": time.time(),
             }
             temp = HOTLOAD_READY_FILE.with_name(HOTLOAD_READY_FILE.name + ".tmp")
@@ -145,6 +152,7 @@ class solo_directed(solo_arcade):
                 "mode": self.mode,
                 "map": self.current_map_name(),
                 "phase": self.controller.phase.value,
+                "game_state": self.game_state(),
                 "time": time.time(),
                 "error": error,
             }
@@ -276,6 +284,10 @@ class solo_directed(solo_arcade):
         if now >= self.next_training_assert:
             self.next_training_assert = now + 1.0
             self._force_training_contract()
+            # Backstop for the game_countdown/game_start hooks: if the engine
+            # has left warmup by any route, put it back before it can forfeit.
+            if self.game_state() in MATCH_STATES:
+                self.hold_warmup("frame check found a live match")
         self._poll_match_request(now)
         return super().handle_frame()
 

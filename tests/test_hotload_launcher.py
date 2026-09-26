@@ -21,13 +21,18 @@ class HotLoadLauncherTests(unittest.TestCase):
                 launcher.solo_plugin_ready = lambda *args, **kwargs: True
                 self.assertFalse(launcher.solo_hot_switch_available())
 
-                marker.write_text(json.dumps({"ready": True, "protocol": 1, "pid": 9999}))
+                marker.write_text(json.dumps({"ready": True, "protocol": 2, "pid": 9999}))
                 self.assertFalse(launcher.solo_hot_switch_available())
 
-                marker.write_text(json.dumps({"ready": True, "protocol": 1, "pid": 4321}))
+                marker.write_text(json.dumps({"ready": True, "protocol": 2, "pid": 4321}))
                 self.assertTrue(launcher.solo_hot_switch_available())
 
-                marker.write_text(json.dumps({"ready": True, "protocol": 2, "pid": 4321}))
+                # A still-running protocol-1 server has the old forfeit-prone
+                # plugin loaded; it must be restarted, never hot-loaded into.
+                marker.write_text(json.dumps({"ready": True, "protocol": 1, "pid": 4321}))
+                self.assertFalse(launcher.solo_hot_switch_available())
+
+                marker.write_text(json.dumps({"ready": True, "protocol": 3, "pid": 4321}))
                 self.assertFalse(launcher.solo_hot_switch_available())
             finally:
                 launcher.SOLO_HOTLOAD_READY_FILE = old_marker

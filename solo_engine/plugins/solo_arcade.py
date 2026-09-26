@@ -41,7 +41,30 @@ SESSION_FILE = Path.home() / ".config/quake-live-launcher/solo_session.json"
 STATE_FILE = Path.home() / ".config/quake-live-launcher/arena_run_state_v5.json"
 RUNTIME_DIR = Path.home() / ".local/share/quake-live-launcher/solo_runtime"
 PLUGIN_READY_FILE = RUNTIME_DIR / "plugin_ready.json"
-PLUGIN_VERSION = "5.0-alpha"
+PLUGIN_VERSION = "5.0-alpha-warmup1"
+
+# Forfeit root cause (v5.0-alpha-warmup1):
+#
+# Quake Live only runs its multiplayer forfeit rules once a match has left
+# warmup.  The old contract forced the match straight to IN_PROGRESS
+# (g_doWarmup 0 + sv_warmupReadyPercentage 0) and then every mode starts by
+# clearing BLUE and adding bots on later frames.  A live TDM match with an
+# empty team is a forfeit, and allow_single_player()/mapIsTrainingMap only
+# relaxes the "fewer than two players" rule used by race - it does not stop
+# the empty-team rule.  Enemies are also kicked on death, so BLUE empties again
+# at every wave clear.
+#
+# The scripted modes never need Quake Live's match layer: the plugin owns
+# objectives, lives, scoring and completion.  So the combat sandbox now stays
+# in warmup permanently, where combat, bots, spawns and minqlx death/damage
+# events all run normally but no match can be forfeited.
+WARMUP_SANDBOX_CVARS = {
+    "g_doWarmup": "1",
+    "sv_warmupReadyPercentage": "1",
+    "g_warmupReadyDelay": "0",
+    "g_warmupDelay": "0",
+}
+READY_COMMANDS = {"readyup", "ready", "notready"}
 
 SUPPORTED_MODES = {
     "arena_run", "horde", "gun_game", "boss_rush", "wipeout_solo",
@@ -148,6 +171,16 @@ class solo_arcade(minqlx.Plugin):
         self.add_hook("frame", self.handle_frame)
         self.add_hook("client_command", self.handle_client_command)
         self.add_hook("unload", self.handle_unload)
+        self.last_warmup_hold = 0.0
+        for event, handler in (
+            ("game_countdown", self.handle_game_countdown),
+            ("game_start", self.handle_game_start),
+            ("game_end", self.handle_game_end),
+        ):
+            try:
+                self.add_hook(event, handler)
+            except Exception as exc:
+                self._log(f"warmup guard hook {event} unavailable: {exc}")
 
         self.add_command(("run", "solo"), self.cmd_run)
         self.add_command("solohelp", self.cmd_help)
@@ -188,10 +221,10 @@ class solo_arcade(minqlx.Plugin):
             "bot_dynamicskill": "0", "bot_minplayers": "0",
             "fraglimit": "0", "timelimit": "0",
             "capturelimit": "0", "roundlimit": "0", "scorelimit": "0",
-            "g_doWarmup": "0", "g_warmup": "0", "sv_warmupReadyPercentage": "0",
-            "g_warmupDelay": "0", "g_friendlyFire": "0", "g_teamForceBalance": "0",
+            "g_friendlyFire": "0", "g_teamForceBalance": "0",
             "g_teamSizeMin": "0", "g_teamSizeMax": "0",
         }
+        cvars.update(WARMUP_SANDBOX_CVARS)
         for name, value in cvars.items():
             try:
                 self.set_cvar(name, value)
@@ -245,7 +278,46 @@ class solo_arcade(minqlx.Plugin):
         minqlx.allow_single_player(True)
         self._configure_engine()
         self.airborne.clear(); self.dash_used.clear(); self.ground_ticks.clear()
-        self._log(f"map={map_name} factory={factory} phase={self.controller.phase.value}")
+        self._log(f"map={map_name} factory={factory} phase={self.controller.phase.value} game_state={self.game_state()}")
+
+    # ---------- permanent-warmup sandbox (anti-forfeit) ----------
+    def game_state(self):
+        try:
+            return str(self.game.state)
+        except Exception:
+            return "unknown"
+
+    def hold_warmup(self, reason):
+        """Return the server to warmup if Quake Live ever tries to start a match."""
+        now = time.time()
+        if now - self.last_warmup_hold < 1.0:
+            return False
+        self.last_warmup_hold = now
+        self._log(f"warmup guard: {reason}; game_state={self.game_state()}; aborting back to warmup")
+        for name, value in WARMUP_SANDBOX_CVARS.items():
+            try:
+                self.set_cvar(name, value)
+            except Exception:
+                pass
+        try:
+            minqlx.console_command("abort")
+        except Exception as exc:
+            self._log(f"warmup guard abort failed: {exc}")
+        return True
+
+    def handle_game_countdown(self, *args):
+        self.hold_warmup("match countdown started")
+
+    def handle_game_start(self, *args):
+        self.hold_warmup("match started")
+
+    def handle_game_end(self, data=None, *args):
+        summary = {}
+        if isinstance(data, dict):
+            for key in ("ABORTED", "EXIT_MSG", "GAME_TYPE", "MAP", "TSCORE0", "TSCORE1"):
+                if key in data:
+                    summary[key] = data[key]
+        self._log(f"game_end observed phase={self.controller.phase.value} data={summary}")
 
     # ---------- player/bot helpers ----------
     def human_players(self):
@@ -1014,7 +1086,18 @@ class solo_arcade(minqlx.Plugin):
     def handle_client_command(self, player, command):
         try:
             parts = str(command).strip().split()
-            if not parts or parts[0].lower() != "qldash":
+            if not parts:
+                return
+            verb = parts[0].lower()
+            if verb in READY_COMMANDS:
+                # Readying up would take the sandbox out of warmup and back into
+                # Quake Live's match rules, where an empty BLUE team forfeits.
+                try:
+                    player.center_print("^7Solo runs stay in warmup; ready-up is not needed.")
+                except Exception:
+                    pass
+                return minqlx.RET_STOP_ALL
+            if verb != "qldash":
                 return
             if len(parts) >= 2 and parts[1].lower() in ("left", "right"):
                 self.request_side_dash(player, parts[1].lower())

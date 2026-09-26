@@ -69,8 +69,15 @@ class PackageTests(unittest.TestCase):
         gui=source_text('launcher_gui.py'); self.assertIn('SOLO ENGINE SETUP RUNNING',gui); self.assertIn('GLib.timeout_add(1000,self.poll_solo_setup_status)',gui)
     def test_solo_single_player_contract(self):
         setup=(ROOT/'solo_engine/setup_solo_engine.sh').read_text()
-        for token in ('set g_doWarmup "0"','set sv_warmupReadyPercentage "0"','set bot_minplayers "0"','set g_friendlyFire "0"'): self.assertIn(token,setup)
+        for token in ('set g_doWarmup "1"','set sv_warmupReadyPercentage "1"','set g_warmupReadyDelay "0"','set bot_minplayers "0"','set g_friendlyFire "0"'): self.assertIn(token,setup)
+        self.assertNotIn('set g_doWarmup "0"',setup); self.assertNotIn('set sv_warmupReadyPercentage "0"',setup)
         start=(ROOT/'solo_engine/start_solo.sh').read_text(); self.assertIn('+set zmq_stats_enable 1',start); self.assertIn('+set bot_minplayers 0',start); self.assertIn('+map "$MAP" tdm',start)
+        # The permanent-warmup cvars must be applied AFTER server.cfg so an older
+        # installed server.cfg (g_doWarmup "0") cannot re-enable the match layer.
+        exec_at=start.index('+exec server.cfg')
+        for token in ('+set g_doWarmup 1','+set sv_warmupReadyPercentage 1','+set g_warmupReadyDelay 0'):
+            self.assertGreater(start.index(token),exec_at,token)
+        self.assertNotIn('+set g_doWarmup 0',start); self.assertNotIn('+set sv_warmupReadyPercentage 0',start)
         plugin=(ROOT/'solo_engine/plugins/solo_arcade.py').read_text(); self.assertIn('minqlx.allow_single_player(True)',plugin); self.assertIn('self.add_hook("player_loaded", self.handle_player_loaded)',plugin); self.assertIn('self._put_team(player, "red")',plugin); self.assertIn('self._put_team(player, "blue")',plugin)
     def test_director_runtime_is_packaged_and_selected(self):
         start=(ROOT/'solo_engine/start_solo.sh').read_text()
