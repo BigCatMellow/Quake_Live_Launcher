@@ -408,58 +408,122 @@ class AgainCommandTests(unittest.TestCase):
 
 
 class PickBindTests(unittest.TestCase):
-    def test_controls_cfg_binds_pick_keys_and_remembers_originals(self):
-        import launcher
-        with tempfile.TemporaryDirectory() as tmp:
-            game_dir = Path(tmp)
-            (game_dir / "baseq3").mkdir()
-            (game_dir / "baseq3" / "qzconfig.cfg").write_text(
-                'bind A "+moveleft"\nbind D "+moveright"\nbind F5 "vote yes"\n', encoding="utf-8"
-            )
-            old_dirs = launcher.game_user_baseq3_dirs
-            launcher.game_user_baseq3_dirs = lambda _g: []
-            try:
-                cfg, originals = launcher.write_solo_controls_cfg(game_dir, enabled=True)
-            finally:
-                launcher.game_user_baseq3_dirs = old_dirs
-            text = cfg.read_text()
-            for index, key in enumerate(("F5", "F6", "F7"), 1):
-                self.assertIn(f'bind {key} "cmd qlpick {index}"', text)
-            self.assertEqual(originals["F5"], "vote yes")
-            self.assertEqual(originals["F6"], "")
-            self.assertEqual(originals["A"], "+moveleft")
-            self.assertIn("qldash", text)
+    """Solo controls cfg: one dedicated dash key, F5-F7 picks, originals restored."""
 
-    def test_controls_cfg_is_multiline_and_uses_real_strafe_keys(self):
-        # Regression: the payload wrote one "//"-prefixed line (the whole file
-        # was a comment) and its bind regex never matched, forcing A/D.
+    def controls(self, config_text, override=None):
         import launcher
-        with tempfile.TemporaryDirectory() as tmp:
-            game_dir = Path(tmp)
-            (game_dir / "baseq3").mkdir()
-            qz = game_dir / "baseq3" / "qzconfig.cfg"
-            qz.write_text('bind S "+moveleft"\nbind F "+moveright"\n', encoding="utf-8")
-            old_dirs = launcher.game_user_baseq3_dirs
-            launcher.game_user_baseq3_dirs = lambda _g: []
-            try:
-                cfg, originals = launcher.write_solo_controls_cfg(game_dir, enabled=True)
-                lines = cfg.read_text().splitlines()
-                self.assertGreater(len(lines), 8)
-                self.assertIn('bind S "+qll_side_left"', lines)
-                self.assertIn('bind F "+qll_side_right"', lines)
-                self.assertNotIn("\\n", cfg.read_text())
-                # Simulate Quake saving the temporary binds, then restore.
-                qz.write_text('bind S "+qll_side_left"\nbind F "+qll_side_right"\nbind F5 "cmd qlpick 1"\n', encoding="utf-8")
-                self.assertTrue(launcher.restore_strafe_binds(game_dir, originals))
-            finally:
-                launcher.game_user_baseq3_dirs = old_dirs
-            restored = qz.read_text()
-            self.assertIn('bind S "+moveleft"', restored)
-            self.assertIn('bind F "+moveright"', restored)
-            self.assertIn('bind F5 ""', restored)
-            self.assertNotIn("qll", restored)
-            self.assertNotIn("qlpick", restored)
-            self.assertNotIn("\\n", restored)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        game_dir = Path(tmp.name) / "game"
+        (game_dir / "baseq3").mkdir(parents=True)
+        qz = game_dir / "baseq3" / "qzconfig.cfg"
+        qz.write_text(config_text, encoding="utf-8")
+        runtime_controls = Path(tmp.name) / "controls.json"
+        override_file = Path(tmp.name) / "solo_controls.json"
+        if override:
+            override_file.write_text(json.dumps(override))
+        saved = (launcher.game_user_baseq3_dirs, launcher.SOLO_CONTROLS_FILE, launcher.SOLO_CONTROLS_OVERRIDE)
+        launcher.game_user_baseq3_dirs = lambda _g: []
+        launcher.SOLO_CONTROLS_FILE = runtime_controls
+        launcher.SOLO_CONTROLS_OVERRIDE = override_file
+        self.addCleanup(lambda: setattr(launcher, "game_user_baseq3_dirs", saved[0]))
+        self.addCleanup(lambda: setattr(launcher, "SOLO_CONTROLS_FILE", saved[1]))
+        self.addCleanup(lambda: setattr(launcher, "SOLO_CONTROLS_OVERRIDE", saved[2]))
+        cfg, originals = launcher.write_solo_controls_cfg(game_dir, enabled=True)
+        return launcher, game_dir, qz, cfg, originals, runtime_controls
+
+    def test_strafe_keys_never_send_commands(self):
+        # Regression (real play 2026-09-26): a command on every strafe tap got
+        # the player disconnected for "flooding the server".
+        _, _, _, cfg, originals, _ = self.controls('bind A "+moveleft"\nbind D "+moveright"\n')
+        text = cfg.read_text()
+        self.assertNotIn("+qll_side", text)
+        self.assertNotIn("bind A", text)
+        self.assertNotIn("bind D", text)
+        self.assertNotIn("A", originals)
+        self.assertEqual(text.count("cmd qldash"), 1)
+
+    def test_dash_uses_first_free_candidate_key(self):
+        _, _, _, cfg, originals, runtime_controls = self.controls(
+            'bind MOUSE4 "weapon 5"\nbind MOUSE5 "+zoom"\nbind F5 "vote yes"\n'
+        )
+        text = cfg.read_text()
+        self.assertIn('bind SHIFT "cmd qldash auto"', text)
+        self.assertEqual(originals["SHIFT"], "")
+        self.assertEqual(json.loads(runtime_controls.read_text())["dash_key"], "SHIFT")
+        self.assertIn("press SHIFT to dodge", text)
+        for index, key in enumerate(("F5", "F6", "F7"), 1):
+            self.assertIn(f'bind {key} "cmd qlpick {index}"', text)
+        self.assertEqual(originals["F5"], "vote yes")
+        self.assertEqual(originals["F6"], "")
+
+    def test_dash_key_override(self):
+        _, _, _, cfg, originals, runtime_controls = self.controls("", override={"dash_key": "e"})
+        self.assertIn('bind E "cmd qldash auto"', cfg.read_text())
+        self.assertEqual(json.loads(runtime_controls.read_text())["dash_key"], "E")
+
+    def test_no_free_key_means_no_dash_bind(self):
+        import launcher
+        taken = "".join(f'bind {k} "x"\n' for k in launcher.SOLO_DASH_KEY_CANDIDATES)
+        _, _, _, cfg, _, runtime_controls = self.controls(taken)
+        self.assertNotIn("qldash", cfg.read_text())
+        self.assertIsNone(json.loads(runtime_controls.read_text())["dash_key"])
+
+    def test_old_strafe_wrapper_binds_are_repaired_and_restored_as_movement(self):
+        launcher, game_dir, qz, cfg, originals, _ = self.controls(
+            'bind S "+qll_side_left"\nbind F "+qll_side_right"\n'
+        )
+        lines = cfg.read_text().splitlines()
+        self.assertIn('bind S "+moveleft"', lines)
+        self.assertIn('bind F "+moveright"', lines)
+        self.assertEqual(originals["S"], "+moveleft")
+        # Quake saves whatever is bound on exit; the restore then fixes it.
+        qz.write_text('bind S "+qll_side_left"\nbind F "+qll_side_right"\nbind MOUSE4 "cmd qldash auto"\nbind F5 "cmd qlpick 1"\n')
+        self.assertTrue(launcher.restore_strafe_binds(game_dir, originals))
+        restored = qz.read_text()
+        self.assertIn('bind S "+moveleft"', restored)
+        self.assertIn('bind F "+moveright"', restored)
+        self.assertIn('bind MOUSE4 ""', restored)
+        self.assertIn('bind F5 ""', restored)
+        self.assertNotIn("qll", restored)
+        self.assertNotIn("qlpick", restored)
+        self.assertNotIn("qldash", restored)
+        self.assertNotIn("\\n", restored)
+
+
+class DashCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.harness = RuntimeHarness(methodName="runTest")
+        self.harness.setUp()
+
+    def tearDown(self):
+        self.harness.tearDown()
+
+    def test_qldash_auto_dashes_along_strafe_direction(self):
+        server, plugin, human = self.harness.boot("horde")
+        minqlx = importlib.import_module("minqlx")
+        human.velocity(x=0, y=0, z=0)
+        self.assertEqual(plugin.handle_client_command(human, "qldash auto"), minqlx.RET_STOP_ALL)
+        human.velocity(x=0, y=40, z=0)  # strafing toward +y during the 35 ms window
+        server.advance(0.1)
+        self.assertGreater(human.velocity().y, 300)
+
+    def test_qldash_auto_without_strafe_boosts_along_travel(self):
+        server, plugin, human = self.harness.boot("horde")
+        human.velocity(x=250, y=0, z=0)
+        plugin.handle_client_command(human, "qldash auto")
+        server.advance(0.1)
+        self.assertGreater(human.velocity().x, 500)
+
+    def test_dash_key_hint_is_shown_once_on_first_spawn(self):
+        runtime = self.harness.home / ".local/share/quake-live-launcher/solo_runtime"
+        runtime.mkdir(parents=True, exist_ok=True)
+        (runtime / "controls.json").write_text(json.dumps({"dash_key": "MOUSE4"}))
+        server, plugin, human = self.harness.boot("horde")
+        hints = [t for t in human.tells if "MOUSE4" in t]
+        self.assertEqual(len(hints), 1)
+        server.emit("player_spawn", human)
+        self.assertEqual(len([t for t in human.tells if "MOUSE4" in t]), 1)
 
 
 if __name__ == "__main__":

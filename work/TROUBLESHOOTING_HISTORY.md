@@ -360,6 +360,17 @@ The retained launcher payload stored its controls helpers with one escaping laye
 
 ---
 
+## 4.6 Real play, 2026-09-26 evening (5.0-alpha-setup1 branch build)
+
+Evidence: the player got past the start of the match (no instant forfeit reported), then:
+
+1. **"Server disconnected - flooding the server".** Quake 3 servers accept one client command per second (`sv_floodProtect`); Quake Live disconnects clients that exceed it. The 4.5 controls fix made the strafe-key wrapper live for the first time, so every strafe tap sent `cmd qldash`. Fix (5.0-alpha-controls1): strafe keys are never wrapped; dash uses one dedicated unbound key (`cmd qldash auto`, direction from the current strafe); stale wrapper binds are repaired; the local-only server sets `sv_floodProtect 0`.
+2. **A top-of-screen message flashing, "This match will determine …".** Matches Quake Live's training-match text. The old anti-forfeit "training contract" set `g_training 1` and `allow_single_player(True)` and re-applied both every second. Permanent warmup (4.3) is what prevents the forfeit, so both are removed: `g_training 0` is set after `server.cfg`, the training flag is cleared once per map, and nothing is re-applied per frame.
+
+The absence of an instant forfeit in this run is the first live evidence for the 4.3 warmup fix. R-002 still needs an explicit confirmation run.
+
+---
+
 # 5. Persistent Solo / hot-load attempts
 
 The second live usability problem was having to close/reopen Quake for every scripted Solo mode.

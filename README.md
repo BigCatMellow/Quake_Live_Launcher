@@ -198,17 +198,22 @@ The v5 upgrade pool only exposes effects with runtime consumers, including:
 
 Normal Quake jump is left intact.
 
-With Side Thrusters enabled:
+With Side Thrusters enabled, dash has **one dedicated key**: the first of `MOUSE4`,
+`MOUSE5`, `SHIFT`, `ALT`, `V`, `G`, `X`, `Z` that you have not bound. The game tells you
+which one when you spawn.
 
-- tap left/right on the ground for a quick horizontal dodge plus a short hop;
-- tap left/right in the air for a lateral correction;
+- hold a strafe key and press the dash key on the ground for a quick dodge plus a short hop;
+- press it in the air for a lateral correction (air dash);
+- without strafing, it boosts you along your direction of travel;
 - charges refresh after a confirmed landing;
-- Arena Run movement upgrades can add charges and thrust.
+- Arena Run movement upgrades can add charges and thrust;
+- `!dash left` / `!dash right` in chat always works as a fallback.
 
-The launcher temporarily wraps the keys currently bound to `+moveleft` and
-`+moveright` (detected from your config, so ESDF/arrow layouts work), binds
-F5/F6/F7 to Arena Run upgrade picks, then restores the original binds after
-Quake closes.
+Choose the key yourself with `{"dash_key": "MOUSE4"}` in
+`~/.config/quake-live-launcher/solo_controls.json`. The launcher binds the dash key and
+F5/F6/F7 (Arena Run upgrade picks) only while Solo is running, then restores your
+original binds after Quake closes. Strafe keys are never touched: sending a command on
+every strafe tap got players disconnected for "flooding the server".
 
 ## Director
 

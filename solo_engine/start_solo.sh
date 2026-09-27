@@ -112,6 +112,9 @@ fi
 # only run after warmup ends, and the Solo plugin owns scoring/completion.
 # These are set AFTER +exec server.cfg so an older installed server.cfg that
 # still says g_doWarmup "0" cannot switch the match layer back on.
+# sv_floodProtect 0: Quake 3 servers accept one client command per second and
+# Quake Live disconnects clients that go faster ("flooding the server"). This
+# server only listens on 127.0.0.1, so flood protection has nothing to protect.
 log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox (permanent warmup) + encounter Director"
 (
   cd "$QLDS" || exit 91
@@ -134,13 +137,14 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox (permane
     +set bot_minplayers 0 \
     +set g_friendlyFire 0 \
     +set g_teamForceBalance 0 \
-    +set g_training 1 \
     +exec server.cfg \
     +set qlx_plugins "$PLUGINS" \
     +set g_doWarmup 1 \
     +set sv_warmupReadyPercentage 1 \
     +set g_warmupReadyDelay 0 \
     +set g_warmupDelay 0 \
+    +set g_training 0 \
+    +set sv_floodProtect 0 \
     +map "$MAP" tdm
 ) >>"$LOG" 2>&1 &
 pid=$!

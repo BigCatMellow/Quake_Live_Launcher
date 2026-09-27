@@ -83,7 +83,8 @@ class RuntimeHarness(unittest.TestCase):
 
     def test_minqlx_style_hyphen_package_import_and_ready_handshake(self):
         server, plugin, human = self.boot("horde")
-        self.assertTrue(server.single_player_allowed)
+        self.assertFalse(server.single_player_allowed)
+        self.assertEqual(server.cvars.get("g_training"), "0")
         self.assertEqual(human.team, "red")
         ready = self.home / ".local/share/quake-live-launcher/solo_runtime/plugin_ready.json"
         payload = json.loads(ready.read_text())

@@ -21,19 +21,19 @@ class HotLoadLauncherTests(unittest.TestCase):
                 launcher.solo_plugin_ready = lambda *args, **kwargs: True
                 self.assertFalse(launcher.solo_hot_switch_available())
 
-                marker.write_text(json.dumps({"ready": True, "protocol": 4, "pid": 9999}))
+                marker.write_text(json.dumps({"ready": True, "protocol": 5, "pid": 9999}))
                 self.assertFalse(launcher.solo_hot_switch_available())
 
-                marker.write_text(json.dumps({"ready": True, "protocol": 4, "pid": 4321}))
+                marker.write_text(json.dumps({"ready": True, "protocol": 5, "pid": 4321}))
                 self.assertTrue(launcher.solo_hot_switch_available())
 
                 # Older servers (1 = forfeit-prone plugin, 2 = before the mode
                 # overhaul, 3 = before the spawn Director) must be restarted.
-                for old in (1, 2, 3):
+                for old in (1, 2, 3, 4):
                     marker.write_text(json.dumps({"ready": True, "protocol": old, "pid": 4321}))
                     self.assertFalse(launcher.solo_hot_switch_available())
 
-                marker.write_text(json.dumps({"ready": True, "protocol": 5, "pid": 4321}))
+                marker.write_text(json.dumps({"ready": True, "protocol": 6, "pid": 4321}))
                 self.assertFalse(launcher.solo_hot_switch_available())
             finally:
                 launcher.SOLO_HOTLOAD_READY_FILE = old_marker

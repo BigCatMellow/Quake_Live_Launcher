@@ -29,15 +29,16 @@ if _WAS_MAIN:
 exec(compile(_SOURCE, str(_BASE / "launcher_impl.py"), "exec"), globals(), globals())
 globals()["__name__"] = _ORIGINAL_NAME
 
-APP_VERSION = "5.0-alpha-setup1"
+APP_VERSION = "5.0-alpha-controls1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
 SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"
 # Must match solo_directed.HOTLOAD_PROTOCOL. Protocol 2 = permanent-warmup
 # anti-forfeit sandbox; 3 = mode overhaul (!again, F5-F7 picks, records);
-# 4 = spawn Director (learned spawn points, placement, flankers).
+# 4 = spawn Director (learned spawn points, placement, flankers); 5 = no
+# training mode, flood protection off, dedicated dash key.
 # A server advertising an older protocol is restarted instead of reused.
-SOLO_HOTLOAD_PROTOCOL = 4
+SOLO_HOTLOAD_PROTOCOL = 5
 GITHUB_DEBUG_REPO = "BigCatMellow/Quake_Live_Launcher"
 GITHUB_DEBUG_OWNER = "BigCatMellow"
 SOLO_GITHUB_DEBUG_STATUS_FILE = SOLO_RUNTIME_DIR / "last_github_debug.json"
@@ -97,46 +98,61 @@ def _current_client_binds(game_dir: Path) -> dict:
     return binds
 
 
+# Side-thruster dash lives on ONE dedicated key. Earlier builds sent a hidden
+# "cmd qldash" on every strafe-key press; strafe is tapped constantly, and
+# Quake Live disconnects clients that send commands that fast ("Server
+# disconnected - flooding the server"). The first candidate you have not bound
+# is used; override with {"dash_key": "MOUSE4"} in solo_controls.json.
+SOLO_DASH_KEY_CANDIDATES = ("MOUSE4", "MOUSE5", "SHIFT", "ALT", "V", "G", "X", "Z")
+SOLO_CONTROLS_FILE = SOLO_RUNTIME_DIR / "controls.json"
+SOLO_CONTROLS_OVERRIDE = Path.home() / ".config/quake-live-launcher/solo_controls.json"
+_OLD_STRAFE_WRAPPERS = {"+qll_side_left": "+moveleft", "+qll_side_right": "+moveright"}
+
+
+def choose_solo_dash_key(binds: dict):
+    try:
+        override = json.loads(SOLO_CONTROLS_OVERRIDE.read_text(encoding="utf-8")).get("dash_key")
+    except Exception:
+        override = None
+    if override:
+        return str(override).upper()
+    for key in SOLO_DASH_KEY_CANDIDATES:
+        if not str(binds.get(key, "")).strip():
+            return key
+    return None
+
+
 def write_solo_controls_cfg(game_dir, enabled: bool = True):
-    """Write the temporary Solo controls cfg (side thrusters + upgrade picks)."""
+    """Write the temporary Solo controls cfg (dash key + upgrade picks)."""
     if not enabled:
         return None, {}
     game_dir = Path(game_dir)
-    left, right, originals = detect_strafe_keys(game_dir)
-    originals = dict(originals or {})
     binds = _current_client_binds(game_dir)
-    lines = [
-        "// Temporary Solo Engine controls. Original binds are restored after Quake exits.",
-        'alias +qll_side_left "+moveleft; cmd qldash left"',
-        'alias -qll_side_left "-moveleft"',
-        'alias +qll_side_right "+moveright; cmd qldash right"',
-        'alias -qll_side_right "-moveright"',
-        f'bind {left} "+qll_side_left"',
-        f'bind {right} "+qll_side_right"',
-    ]
+    originals: dict = {}
+    lines = ["// Temporary Solo Engine controls. Original binds are restored after Quake exits."]
+    # Repair strafe keys still bound to the old per-tap wrapper (for example
+    # after a session that ended in a flood disconnect before the restore ran).
+    for key, command in sorted(binds.items()):
+        plain = _OLD_STRAFE_WRAPPERS.get(str(command).strip().lower())
+        if plain:
+            lines.append(f'bind {key} "{plain}"')
+            originals[key] = plain
+    dash_key = choose_solo_dash_key(binds)
+    if dash_key:
+        originals.setdefault(dash_key, binds.get(dash_key, ""))
+        lines.append(f'bind {dash_key} "cmd qldash auto"')
     for index, key in enumerate(SOLO_PICK_KEYS, 1):
-        if key.upper() in (left.upper(), right.upper()):
+        if dash_key and key.upper() == dash_key:
             continue
         originals.setdefault(key, binds.get(key, ""))
         lines.append(f'bind {key} "cmd qlpick {index}"')
-    lines.append('echo "^6Solo:^7 side thrusters on strafe keys; F5/F6/F7 pick Arena Run upgrades"')
+    dash_text = f"hold a strafe key and press {dash_key} to dodge/air-dash" if dash_key else "use !dash left/right"
+    lines.append(f'echo "^6Solo:^7 side thrusters: {dash_text}; F5/F6/F7 pick Arena Run upgrades"')
     cfg = game_dir / "baseq3" / "qllauncher_solo_controls.cfg"
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return cfg, originals
-    originals = dict(originals or {})
     try:
-        binds = _current_client_binds(Path(game_dir))
-        lines = []
-        for index, key in enumerate(SOLO_PICK_KEYS, 1):
-            if key not in originals:
-                originals[key] = binds.get(key, "")
-            lines.append(f'bind {key} "cmd qlpick {index}"')
-        lines.append('echo "^6Solo:^7 F5/F6/F7 pick Arena Run upgrades"')
-        text = cfg.read_text(encoding="utf-8")
-        if text and not text.endswith("\n"):
-            text += "\n"
-        cfg.write_text(text + "\n".join(lines) + "\n", encoding="utf-8")
+        _atomic_json(SOLO_CONTROLS_FILE, {"dash_key": dash_key, "pick_keys": list(SOLO_PICK_KEYS), "written_at": time.time()})
     except Exception:
         pass
     return cfg, originals

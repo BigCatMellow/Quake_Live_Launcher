@@ -43,25 +43,26 @@ class HotLoadRuntimeTests(unittest.TestCase):
         server.emit("player_spawn", human)
         return server, plugin, human
 
-    def test_training_contract_is_active_before_horde_gameplay(self):
+    def test_training_mode_stays_off_and_is_never_reasserted(self):
+        # Regression (real play 2026-09-26): the old "training contract" set
+        # g_training 1 + allow_single_player(True) every second, which put
+        # Quake Live's training-match message on screen, flashing. Permanent
+        # warmup prevents the forfeit; training mode must stay off.
         server, plugin, human = self.boot_directed("horde")
-        self.assertTrue(server.single_player_allowed)
-        self.assertEqual(server.cvars.get("g_training"), "1")
+        self.assertFalse(server.single_player_allowed)
+        self.assertEqual(server.cvars.get("g_training"), "0")
+        self.assertEqual(server.cvars.get("sv_floodProtect"), "0")
         self.assertEqual(human.team, "red")
         server.advance(3)
         self.assertEqual(plugin.controller.phase.value, "active")
         self.assertTrue(plugin.controller.enemy_ids)
-
-        # Model the exact live race we are protecting against: an initialization
-        # boundary loses the level's training flag after the plugin constructor.
-        # The first live frame must restore single-player permission before the
-        # ordinary multiplayer forfeit path can own the match.
-        server.single_player_allowed = False
-        server.cvars["g_training"] = "0"
-        plugin.next_training_assert = 0
-        plugin.handle_frame()
-        self.assertTrue(server.single_player_allowed)
-        self.assertEqual(server.cvars.get("g_training"), "1")
+        before = list(server.commands)
+        for _ in range(5):
+            plugin.next_warmup_check = 0
+            plugin.handle_frame()
+        self.assertFalse(server.single_player_allowed)
+        self.assertEqual(server.cvars.get("g_training"), "0")
+        self.assertEqual(server.commands, before, "frames must not keep re-sending settings")
         self.assertEqual(plugin.controller.phase.value, "active")
 
     def test_directed_server_advertises_hotload_protocol_for_its_pid(self):
@@ -69,7 +70,7 @@ class HotLoadRuntimeTests(unittest.TestCase):
         runtime = self.harness.home / ".local/share/quake-live-launcher/solo_runtime"
         marker = json.loads((runtime / "hotload_ready.json").read_text())
         self.assertTrue(marker["ready"])
-        self.assertEqual(marker["protocol"], 4)
+        self.assertEqual(marker["protocol"], 5)
         self.assertEqual(marker["pid"], os.getpid())
         self.assertEqual(marker["mode"], "horde")
         plugin.handle_unload(plugin)
@@ -110,12 +111,12 @@ class HotLoadRuntimeTests(unittest.TestCase):
         self.assertEqual(plugin.player_id, original_human_id)
         self.assertEqual(human.team, "red")
         self.assertIn("map campgrounds tdm", server.commands)
-        self.assertEqual(server.cvars.get("g_training"), "1")
+        self.assertEqual(server.cvars.get("g_training"), "0")
         ready = json.loads((runtime / "plugin_ready.json").read_text())
         self.assertEqual(ready["mode"], "gun_game")
         hotload = json.loads((runtime / "hotload_ready.json").read_text())
         self.assertEqual(hotload["mode"], "gun_game")
-        self.assertEqual(hotload["protocol"], 4)
+        self.assertEqual(hotload["protocol"], 5)
         status = json.loads((runtime / "match_status.json").read_text())
         self.assertEqual(status["request_id"], request_id)
         self.assertEqual(status["state"], "loading")
