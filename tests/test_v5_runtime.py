@@ -73,7 +73,8 @@ class RuntimeHarness(unittest.TestCase):
     def active_bots(self, server, plugin):
         return [p for p in server.players.values() if p.id in plugin.controller.enemy_ids]
 
-    def spawn_initial(self, server, max_seconds=3):
+    def spawn_initial(self, server, max_seconds=8):
+        # Long enough for the whole squad, including delayed flankers.
         server.advance(max_seconds)
 
     def kill_all_owned(self, server, plugin, human):

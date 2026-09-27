@@ -206,6 +206,24 @@ class DirectorRuntime:
             target_is_bot=self._is_bot(target),
         )
 
+    def record_spawn_placement(self, bot, decision, *, flank: bool, holding: bool) -> None:
+        """Log every spawn-placement decision so interventions stay auditable."""
+        self._write_action_event(
+            "spawn_placement",
+            bot_id=int(bot.id),
+            name=self._clean_name(bot),
+            moved=bool(decision.moved),
+            reason=str(decision.reason),
+            distance=round(float(decision.distance), 1),
+            flank=bool(flank),
+            recovery_window=bool(holding),
+        )
+        if decision.moved:
+            self.plugin._log(
+                f"DIRECTOR spawn id={bot.id} {decision.reason} distance={decision.distance:.0f}"
+                + (" (recovery window)" if holding else "")
+            )
+
     def reinforcement_delay(self, base_delay: float) -> float:
         now = self.now()
         delay = self.director.reinforcement_delay(now, float(base_delay))

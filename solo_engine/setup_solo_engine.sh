@@ -144,7 +144,7 @@ say "Installing Solo Engine v5 plugin package"
 rm -rf "$PLUGIN_DIR"
 mkdir -p "$PLUGIN_DIR/modes"
 cp "$SOURCE_DIR/plugins/__init__.py" "$PLUGIN_DIR/__init__.py"
-for file in solo_arcade.py solo_directed.py solo_director.py director_runtime.py director_learning.py solo_controller.py solo_core.py; do cp "$SOURCE_DIR/plugins/$file" "$PLUGIN_DIR/$file"; done
+for file in solo_arcade.py solo_directed.py solo_director.py director_runtime.py director_learning.py solo_controller.py solo_core.py spawn_director.py solo_probe.py; do cp "$SOURCE_DIR/plugins/$file" "$PLUGIN_DIR/$file"; done
 cp "$SOURCE_DIR/plugins/modes/__init__.py" "$PLUGIN_DIR/modes/__init__.py"
 for file in "$SOURCE_DIR"/plugins/modes/*.py; do [ -f "$file" ] && cp "$file" "$PLUGIN_DIR/modes/$(basename "$file")"; done
 cp "$SOURCE_DIR/sync_maps.py" "$RUNTIME/sync_maps.py"; chmod +x "$RUNTIME/sync_maps.py"

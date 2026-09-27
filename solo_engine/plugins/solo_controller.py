@@ -42,6 +42,9 @@ class SoloController:
     pending_map: Optional[PendingMap] = None
     failure: Optional[str] = None
     auto_clear: bool = True
+    # Squad members scheduled to arrive after the objective is live (flankers).
+    # An auto-clear objective is not cleared while any are still inbound.
+    pending_reinforcements: int = 0
 
     @property
     def expected_enemies(self) -> int:
@@ -70,6 +73,7 @@ class SoloController:
         self.fulfilled_spawns = 0
         self.initial_spawn_ids.clear()
         self.enemy_ids.clear()
+        self.pending_reinforcements = 0
         self.auto_clear = bool(auto_clear)
         if self.expected_spawns == 0:
             self.phase = Phase.ACTIVE
@@ -95,7 +99,28 @@ class SoloController:
         if cid not in self.enemy_ids:
             return False
         self.enemy_ids.remove(cid)
-        if self.phase == Phase.ACTIVE and self.auto_clear and not self.enemy_ids:
+        return self._clear_if_done()
+
+    def expect_reinforcements(self, count: int) -> None:
+        self.pending_reinforcements += max(0, int(count))
+
+    def reinforcement_arrived(self, client_id: int) -> bool:
+        """Register a scheduled reinforcement's spawn as an owned enemy."""
+        if self.phase not in (Phase.PREPARING, Phase.ACTIVE) or self.pending_reinforcements <= 0:
+            return False
+        self.pending_reinforcements -= 1
+        self.enemy_ids.add(int(client_id))
+        return True
+
+    def reinforcement_cancelled(self) -> bool:
+        """A reinforcement will never arrive; returns True if that clears the objective."""
+        if self.pending_reinforcements <= 0:
+            return False
+        self.pending_reinforcements -= 1
+        return self._clear_if_done()
+
+    def _clear_if_done(self) -> bool:
+        if self.phase == Phase.ACTIVE and self.auto_clear and not self.enemy_ids and self.pending_reinforcements == 0:
             self.phase = Phase.BETWEEN_ROUNDS
             return True
         return False
@@ -152,6 +177,7 @@ class SoloController:
         self.initial_spawn_ids.clear()
         self.enemy_ids.clear()
         self.auto_clear = True
+        self.pending_reinforcements = 0
         if not keep_phase and self.phase not in (Phase.WAITING_FOR_PLAYER, Phase.COMPLETE, Phase.FAILED):
             self.phase = Phase.PREPARING
 

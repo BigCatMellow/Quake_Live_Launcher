@@ -11,6 +11,8 @@ SESSION="$HOME/.config/quake-live-launcher/solo_session.json"
 PLUGIN_READY="$RUNTIME/plugin_ready.json"
 PORT="${QLL_SOLO_PORT:-27960}"
 SKIP_READY_CHECK="${QLL_SKIP_READY_CHECK:-0}"
+# The Director probe (run_director_probe.sh) loads solo_probe instead.
+PLUGINS="${QLL_PLUGINS:-solo_directed}"
 
 mkdir -p "$LOG_DIR" "$RUNTIME"
 fallback_log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-solo-start.log"
@@ -36,6 +38,7 @@ log "SOURCE_DIR=$SOURCE_DIR"
 log "RUNTIME=$RUNTIME"
 log "QLDS=$QLDS"
 log "PORT=$PORT"
+log "PLUGINS=$PLUGINS"
 log "SESSION=$SESSION"
 
 if [ "$SKIP_READY_CHECK" != "1" ]; then
@@ -62,7 +65,7 @@ log "Synchronizing Solo plugin package"
 rm -rf "$QLDS/minqlx-plugins"
 mkdir -p "$QLDS/minqlx-plugins"
 run_logged cp "$SOURCE_DIR/plugins/__init__.py" "$QLDS/minqlx-plugins/__init__.py" || fail 10 "Could not copy plugin package __init__.py"
-for file in solo_arcade.py solo_directed.py solo_director.py director_runtime.py director_learning.py solo_controller.py solo_core.py; do
+for file in solo_arcade.py solo_directed.py solo_director.py director_runtime.py director_learning.py solo_controller.py solo_core.py spawn_director.py solo_probe.py; do
   run_logged cp "$SOURCE_DIR/plugins/$file" "$QLDS/minqlx-plugins/$file" || fail 10 "Could not copy $file"
 done
 mkdir -p "$QLDS/minqlx-plugins/modes"
@@ -124,7 +127,7 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox (permane
     +set net_port "$PORT" \
     +set sv_pure 0 \
     +set qlx_pluginsPath "$QLDS/minqlx-plugins" \
-    +set qlx_plugins solo_directed \
+    +set qlx_plugins "$PLUGINS" \
     +set qlx_soloMode "$MODE" \
     +set zmq_stats_enable 1 \
     +set zmq_stats_port "$PORT" \
@@ -133,7 +136,7 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox (permane
     +set g_teamForceBalance 0 \
     +set g_training 1 \
     +exec server.cfg \
-    +set qlx_plugins solo_directed \
+    +set qlx_plugins "$PLUGINS" \
     +set g_doWarmup 1 \
     +set sv_warmupReadyPercentage 1 \
     +set g_warmupReadyDelay 0 \

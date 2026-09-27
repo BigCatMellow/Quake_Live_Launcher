@@ -229,7 +229,7 @@ class ModeOverhaulTests(unittest.TestCase):
 
     def test_movement_hunter_timer_starts_live_with_callouts(self):
         server, plugin, human = self.boot("movement_hunter")
-        self.harness.spawn_initial(server)  # fake clock is now 3.0; bots went live ~0.6
+        self.harness.spawn_initial(server, 3)  # fake clock is now 3.0; bots went live ~0.6
         server.advance(85)
         self.assertEqual(plugin.controller.phase.value, "active")
         self.assertTrue(any("60" in c for c in human.centers))
