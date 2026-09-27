@@ -93,5 +93,11 @@
     "title": "Random Loadout",
     "tag": "CHAOS",
     "description": "Reach 20 kills while your curated weapon loadout rerolls every 4 kills and after each death."
+  },
+  {
+    "id": "duel_2v1",
+    "title": "Duel 2v1",
+    "tag": "DUEL",
+    "description": "Exactly two opponents, Director-tuned pressure throughout. One life — see how long you last."
   }
 ]

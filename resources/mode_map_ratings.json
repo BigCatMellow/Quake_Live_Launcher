@@ -121,6 +121,10 @@
     "random_loadout": {
       "5": ["Campgrounds", "Asylum", "Almost Lost", "Overkill"],
       "4": ["Trinity", "Retribution"]
+    },
+    "duel_2v1": {
+      "5": ["Overkill", "Asylum", "Grim Dungeons", "Trinity"],
+      "4": ["Campgrounds"]
     }
   },
   "arena_run_rounds": {

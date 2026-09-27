@@ -73,6 +73,8 @@ BASE_PROFILES: dict[str, DirectorProfile] = {
         ("chaser", "skirmisher", "gunner", "chaser")),
     "random_loadout": DirectorProfile("Improvisation", 40, 65, 3, 6.0, 1850, 950, 8.5, 2.5, 4, False,
         ("skirmisher", "chaser", "gunner", "marksman")),
+    "duel_2v1": DirectorProfile("Duel", 40, 66, 2, 6.0, 1900, 950, 8.0, 2.5, 4, True,
+        ("bruiser", "gunner")),
 }
 
 

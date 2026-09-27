@@ -17,7 +17,7 @@ ALL_MODES = (
     "arena_run", "horde", "gun_game", "boss_rush", "wipeout_solo",
     "gauntlet_run", "last_stand", "one_life", "bounty_hunt", "rocket_tag",
     "movement_hunter", "predator", "accuracy_trial", "speedrun_combat",
-    "random_loadout",
+    "random_loadout", "duel_2v1",
 )
 
 
