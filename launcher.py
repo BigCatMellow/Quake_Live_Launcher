@@ -29,10 +29,13 @@ if _WAS_MAIN:
 exec(compile(_SOURCE, str(_BASE / "launcher_impl.py"), "exec"), globals(), globals())
 globals()["__name__"] = _ORIGINAL_NAME
 
-APP_VERSION = "5.0-alpha-hotload2"
+APP_VERSION = "5.0-alpha-warmup1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
 SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"
+# Must match solo_directed.HOTLOAD_PROTOCOL. Protocol 2 = permanent-warmup
+# anti-forfeit sandbox; an older protocol-1 server is restarted instead.
+SOLO_HOTLOAD_PROTOCOL = 2
 GITHUB_DEBUG_REPO = "BigCatMellow/Quake_Live_Launcher"
 GITHUB_DEBUG_OWNER = "BigCatMellow"
 SOLO_GITHUB_DEBUG_STATUS_FILE = SOLO_RUNTIME_DIR / "last_github_debug.json"
@@ -46,7 +49,7 @@ def _atomic_json(path: Path, payload: dict) -> None:
 
 
 def solo_hot_switch_available() -> bool:
-    """True only when this exact running server advertises hot-load protocol v1."""
+    """True only when this exact running server advertises the current hot-load protocol."""
     pid = solo_server_pid()
     if not pid or not solo_plugin_ready():
         return False
@@ -54,7 +57,7 @@ def solo_hot_switch_available() -> bool:
         payload = json.loads(SOLO_HOTLOAD_READY_FILE.read_text(encoding="utf-8"))
         return (
             isinstance(payload, dict)
-            and int(payload.get("protocol", 0)) == 1
+            and int(payload.get("protocol", 0)) == SOLO_HOTLOAD_PROTOCOL
             and int(payload.get("pid", -1)) == int(pid)
             and bool(payload.get("ready"))
         )
@@ -402,7 +405,7 @@ def launch_solo_mode(
             status(f"ERROR: server returned success but plugin readiness handshake is missing or for the wrong mode ({mode}).")
             return
         if not solo_hot_switch_available():
-            status("ERROR: server is healthy but did not advertise the hot-load v1 capability handshake.")
+            status("ERROR: server is healthy but did not advertise the current hot-load capability handshake.")
             return
         status(f"Solo server verified; PID={pid}; UDP27960={solo_udp_listening()}; plugin={solo_plugin_ready_payload()}.")
         if quake_running():

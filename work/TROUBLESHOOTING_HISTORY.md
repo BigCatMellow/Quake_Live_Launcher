@@ -6,7 +6,7 @@
 
 ## Current highest-priority failure
 
-**Status as of 2026-09-26: still reproducing in real Linux Mint play.**
+**Status as of 2026-09-26: still reproducing in real Linux Mint play on `5.0-alpha-hotload2`. `5.0-alpha-warmup1` addresses the leading root cause (see §4.3) and needs live confirmation.**
 
 The scripted Solo round can **forfeit immediately** after the player enters the match.
 
@@ -311,6 +311,40 @@ This means at least one of the following remains possible:
 
 Do not select one of these as the root cause without runtime evidence.
 
+## 4.3 Third approach (5.0-alpha-warmup1): never leave warmup
+
+### New analysis
+
+Re-reading the contract against the mode bootstrap exposed a structural problem that no amount of training-state reassertion could fix:
+
+- `g_doWarmup 0` + `sv_warmupReadyPercentage 0` deliberately forced the sandbox straight into a **live match**.
+- Every mode starts from `handle_player_spawn` -> `_spawn_objective_bots` -> `clear_all_bots()`, and bots are only added by `minqlx.delay` callbacks on later frames. So at the exact moment the human spawns, **BLUE is empty**.
+- Defeated enemies are kicked, so BLUE empties again at every wave/round clear.
+- A live TDM match with an empty team is Quake Live's normal team-forfeit path.
+- minqlx/shinqlx `allow_single_player()` only sets `level->mapIsTrainingMap`; its own docstring scopes it to letting a *single player* continue ("useful for race"). Nothing indicates it suppresses the empty-team rule.
+
+This also explains the v4 history: the "bootstrap bot" existed precisely to keep the other side populated, and its races were races against this rule.
+
+### Change
+
+The scripted sandbox now stays in **warmup for its whole lifetime**. Warmup has full combat, bots, spawns and minqlx death/damage events (QL stats events carry a `WARMUP` flag and are still emitted), but no match exists that can be forfeited. The plugin already owns objectives, lives, scoring and completion, so nothing depended on the match layer.
+
+- `g_doWarmup 1`, `sv_warmupReadyPercentage 1`, `g_warmupReadyDelay 0` in the plugin, `server.cfg` template and `start_solo.sh`.
+- `start_solo.sh` sets them **after** `+exec server.cfg`, because already-installed `server.cfg` files still say `g_doWarmup "0"`.
+- `readyup` / `ready` / `notready` client commands are blocked.
+- `game_countdown` / `game_start` hooks, plus a 1 s frame backstop on `game.state`, run `abort` if the engine ever leaves warmup anyway. Each is logged as `warmup guard:` in the minqlx log.
+- `game_end` is logged with `ABORTED` / `EXIT_MSG` so a remaining forfeit shows up in post-game diagnostics.
+- Hot-load protocol bumped 1 -> 2 so a still-running old server is restarted instead of reused.
+- `FakeServer` now models the live-match empty-team forfeit rule; `tests/test_warmup_sandbox.py` asserts no mode forfeits at spawn or when BLUE empties.
+
+### Status
+
+Still requires real-play confirmation (R-002 stays open until then). If a forfeit still occurs, the minqlx log should now show either a `warmup guard:` line (something started a match) or a `game_end` line with the exit message, which narrows it to a different cause.
+
+### Known trade-off
+
+Quake Live's own scoreboard/accuracy stats may not accumulate during warmup. The plugin's kill/score tracking is unaffected.
+
 ---
 
 # 5. Persistent Solo / hot-load attempts
@@ -569,6 +603,7 @@ Unless new evidence specifically contradicts these conclusions:
 - Do not restart QLDS under an already-running Quake client as the normal hot-load design.
 - Do not embed GitHub credentials in the launcher.
 - Do not mark the immediate-forfeit issue resolved from simulation alone.
+- Do not return the scripted sandbox to `g_doWarmup 0` / `sv_warmupReadyPercentage 0`, and do not set warmup cvars before `+exec server.cfg`; a live match forfeits whenever BLUE is empty, which every mode causes at start and at every clear.
 
 ---
 

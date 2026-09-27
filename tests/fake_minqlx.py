@@ -51,13 +51,33 @@ class FakePlayer:
     def center_print(self, message): self.centers.append(message)
 
 
+class FakeGame:
+    """Minimal game model, including Quake Live's match-layer forfeit rule.
+
+    Models the rule the Solo sandbox must avoid: once a *match* is live
+    (warmup disabled, or a countdown was allowed to finish), a TDM team with
+    no players forfeits. Warmup never forfeits.
+    """
+    def __init__(self, server):
+        self.server = server
+        self.map = "campgrounds"
+        self.type_short = "tdm"
+        self.match_forced = False
+
+    @property
+    def state(self):
+        if self.match_forced or self.server.cvars.get("g_doWarmup", "0") == "0":
+            return "in_progress"
+        return "warmup"
+
+
 class FakeServer:
     def __init__(self):
         self.players={}; self.next_client_id=1
         self.cvars={"zmq_stats_enable":"1","mapname":"campgrounds"}
         self.hooks={}; self.commands=[]; self.console=[]; self.messages=[]; self.scheduler=[]
         self._counter=itertools.count(); self.now=0.0
-        self.game=SimpleNamespace(map="campgrounds", type_short="tdm")
+        self.game=FakeGame(self)
         self.plugin=None; self.single_player_allowed=False
     def schedule(self, delay, func, args, kwargs): heapq.heappush(self.scheduler,(self.now+float(delay),next(self._counter),func,args,kwargs))
     def run_next(self):
@@ -80,6 +100,12 @@ class FakeServer:
         result=None
         for handler in list(self.hooks.get(event,[])): result=handler(*args)
         return result
+    def would_forfeit(self):
+        if self.game.state != "in_progress": return False
+        teams={p.team for p in self.players.values()}
+        return "red" not in teams or "blue" not in teams
+    def force_match_start(self):
+        self.game.match_forced=True; self.emit("game_countdown")
     def death(self,victim,killer=None,data=None): victim.is_alive=False; self.emit("death",victim,killer,data or {})
     def console_command(self, command):
         self.commands.append(command); parts=str(command).split()
@@ -91,6 +117,7 @@ class FakeServer:
         elif parts[0]=="map" and len(parts)>=2:
             self.game.map=parts[1]; self.cvars["mapname"]=parts[1]; factory=parts[2] if len(parts)>=3 else "tdm"; self.game.type_short=factory; self.emit("map",parts[1],factory)
         elif parts[0]=="set" and len(parts)>=3: self.cvars[parts[1]]=parts[2]
+        elif parts[0]=="abort": self.game.match_forced=False
 
 
 def install_fake_minqlx(server: FakeServer):

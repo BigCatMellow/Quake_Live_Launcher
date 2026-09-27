@@ -20,7 +20,7 @@ scripted Solo Engine designed around a single explicit lifecycle.
 
 The real Linux Mint runtime still has one high-priority unresolved issue: a scripted Solo round can **forfeit immediately** even though the server/plugin health checks and automated single-player-training regressions pass. This was reproduced again on **2026-09-26**.
 
-The current build includes automatic post-game diagnostic capture specifically to investigate that failure. Do not interpret green CI as proof that the real-engine forfeit issue is solved.
+Build `5.0-alpha-warmup1` targets the leading root cause: the old contract forced a live match (`g_doWarmup 0`), and every mode starts with an empty BLUE team, which Quake Live forfeits. The scripted sandbox now stays in warmup permanently (see `work/TROUBLESHOOTING_HISTORY.md` §4.3). Automatic post-game diagnostic capture remains in place. Do not interpret green CI as proof that the real-engine forfeit issue is solved until it is confirmed in real play.
 
 Engineering history and approaches already tried are recorded in:
 
@@ -73,7 +73,12 @@ scripted bots -> BLUE
 friendly fire -> off
 frag/time/score limits -> disabled
 bot_minplayers -> 0
+match layer -> permanent warmup (ready-up blocked, countdowns aborted)
 ```
+
+The sandbox never leaves warmup. Quake Live forfeits a live TDM match when a team is
+empty, and BLUE is empty at the start of every mode and after every clear; warmup
+has full combat but no match that can be forfeited.
 
 Quake Live supplies physics, bot AI, navigation and weapon combat. The plugin owns
 waves, bot ownership, progression, lives, bosses, objectives and completion.
