@@ -1,11 +1,32 @@
 #!/usr/bin/env bash
+# Solo Engine setup: local Quake Live Dedicated Server (QLDS) + shinqlx + plugins.
+#
+# Each stage checks what is already installed and skips work that is not needed:
+#   * QLDS is downloaded with SteamCMD only when qzeroded.x64 is missing;
+#   * shinqlx is compiled (Rust nightly + libclang) only when it is not already
+#     built in the private venv;
+#   * build-only system packages are required only when something must be built.
+# The plugin package, server.cfg and the real QLDS self-test always run (seconds),
+# because READY must always reflect a verified engine.
+#
+# Usage: setup_solo_engine.sh [--repair]
+#   --repair  re-download/validate QLDS and rebuild shinqlx even if present.
+#   When everything is already installed and this runs in a terminal, it asks
+#   whether to do the quick check (default) or a full repair.
 set -Eeuo pipefail
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME="$HOME/.local/share/quake-live-launcher/solo_runtime"
 LOG_DIR="$HOME/.local/share/quake-live-launcher/logs"
 STEAMCMD_DIR="$RUNTIME/steamcmd"; QLDS="$RUNTIME/qlds"; VENV="$RUNTIME/.venv"; HOME_PATH="$RUNTIME/home"; PLUGIN_DIR="$QLDS/minqlx-plugins"
-mkdir -p "$RUNTIME" "$LOG_DIR" "$STEAMCMD_DIR" "$HOME_PATH/baseq3" "$PLUGIN_DIR"
-rm -f "$RUNTIME/READY" "$RUNTIME/SELF_TEST_OK" "$RUNTIME/plugin_ready.json"
+QLDS_APP_ID=349090
+REPAIR=0
+for arg in "$@"; do
+  case "$arg" in
+    --repair) REPAIR=1 ;;
+    *) printf 'Unknown option: %s\nUsage: %s [--repair]\n' "$arg" "$0" >&2; exit 64 ;;
+  esac
+done
+mkdir -p "$RUNTIME" "$LOG_DIR" "$STEAMCMD_DIR" "$HOME_PATH/baseq3"
 SETUP_PID="$RUNTIME/setup.pid"
 SETUP_STATUS="$RUNTIME/setup_status"
 
@@ -36,8 +57,45 @@ say "Solo Engine diagnostic setup log started"
 log "Log file: $LOG"; log "SOURCE_DIR=$SOURCE_DIR"; log "RUNTIME=$RUNTIME"; log "Architecture=$(uname -m)"; log "Kernel=$(uname -srmo 2>/dev/null || true)"; log "PATH=$PATH"
 [ -f /etc/os-release ] && { log "/etc/os-release:"; cat /etc/os-release; }
 [ "$(uname -m)" = "x86_64" ] || fail "The current shinqlx route requires 64-bit x86 Linux."
-say "Checking Linux build dependencies"
-required_pkgs=(python3 python3-dev python3-venv python3-pip redis-server pkg-config libssl-dev git build-essential curl tar lib32gcc-s1 lib32stdc++6 clang libclang-dev); missing_pkgs=()
+
+# ---------------------------------------------------------------- detection
+qlds_installed(){ [ -x "$QLDS/qzeroded.x64" ]; }
+qlds_buildid(){ sed -n 's/.*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$QLDS/steamapps/appmanifest_${QLDS_APP_ID}.acf" 2>/dev/null | head -n 1; }
+shinqlx_library(){ find "$VENV" -type f -path '*/shinqlx/*.so' -print -quit 2>/dev/null || true; }
+shinqlx_installed(){
+  [ -x "$VENV/bin/python" ] && [ -n "$(shinqlx_library)" ] && "$VENV/bin/python" -m pip show shinqlx >/dev/null 2>&1
+}
+
+if qlds_installed; then log "Detected QLDS: $QLDS/qzeroded.x64 (buildid $(qlds_buildid))"; else log "QLDS not installed yet."; fi
+if shinqlx_installed; then log "Detected shinqlx: $(shinqlx_library)"; else log "shinqlx not built yet."; fi
+
+if [ "$REPAIR" -eq 0 ] && qlds_installed && shinqlx_installed && [ -t 0 ]; then
+  echo
+  echo "The Solo Engine is already installed (Quake Live Dedicated Server + shinqlx)."
+  echo "  [Enter]  quick check: refresh plugins/config and re-run the self-test (seconds)"
+  echo "  r        full repair: re-download/validate the server and rebuild shinqlx (slow)"
+  answer=""
+  read -r -t 30 -p "Choice [Enter/r]: " answer || true
+  case "${answer,,}" in r|repair) REPAIR=1 ;; esac
+fi
+
+NEED_QLDS=0; NEED_BUILD=0
+if [ "$REPAIR" -eq 1 ] || ! qlds_installed; then NEED_QLDS=1; fi
+if [ "$REPAIR" -eq 1 ] || ! shinqlx_installed; then NEED_BUILD=1; fi
+log "Plan: repair=$REPAIR install_qlds=$NEED_QLDS build_shinqlx=$NEED_BUILD (plugins, config and self-test always run)"
+
+# The engine is only READY again once the self-test below passes.
+rm -f "$RUNTIME/READY" "$RUNTIME/SELF_TEST_OK" "$RUNTIME/plugin_ready.json"
+
+# ------------------------------------------------------------ dependencies
+say "Checking Linux dependencies"
+runtime_pkgs=(python3 python3-venv lib32gcc-s1 lib32stdc++6 redis-server)
+qlds_pkgs=(curl tar)
+build_pkgs=(python3-dev python3-pip pkg-config libssl-dev git build-essential curl clang libclang-dev)
+required_pkgs=("${runtime_pkgs[@]}")
+[ "$NEED_QLDS" -eq 1 ] && required_pkgs+=("${qlds_pkgs[@]}")
+[ "$NEED_BUILD" -eq 1 ] && required_pkgs+=("${build_pkgs[@]}")
+missing_pkgs=()
 if command -v dpkg-query >/dev/null 2>&1; then
   for pkg in "${required_pkgs[@]}"; do
     if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'ok installed'; then log "dependency OK: $pkg"; else log "dependency MISSING: $pkg"; missing_pkgs+=("$pkg"); fi
@@ -49,97 +107,119 @@ if [ ${#missing_pkgs[@]} -gt 0 ]; then
   log "Missing dependencies: ${missing_pkgs[*]}"
   if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
     echo "The Solo Engine needs these for SteamCMD and for compiling shinqlx."; read -r -p "Install the standard dependencies with sudo apt now? [Y/n] " ans; ans=${ans:-Y}
-    if [[ "$ans" =~ ^[Yy]$ ]]; then sudo apt-get update; sudo apt-get install -y "${required_pkgs[@]}"; else fail "Dependencies were not installed. Native Arcade modes still work without the Solo Engine."; fi
+    if [[ "$ans" =~ ^[Yy]$ ]]; then sudo apt-get update; sudo apt-get install -y "${missing_pkgs[@]}"; else fail "Dependencies were not installed. Native Arcade modes still work without the Solo Engine."; fi
   else fail "Install the missing compiler/Python/SteamCMD dependencies, then rerun this setup."; fi
 fi
-say "Installing local SteamCMD"
-if [ ! -x "$STEAMCMD_DIR/steamcmd.sh" ]; then log "Downloading SteamCMD"; curl -L --fail --retry 3 -o "$RUNTIME/steamcmd_linux.tar.gz" https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz; tar -xzf "$RUNTIME/steamcmd_linux.tar.gz" -C "$STEAMCMD_DIR"; else log "SteamCMD already present: $STEAMCMD_DIR/steamcmd.sh"; fi
-"$STEAMCMD_DIR/steamcmd.sh" +quit >/dev/null 2>&1 || log "WARNING: SteamCMD smoke test returned non-zero"
-say "Installing/updating Quake Live Dedicated Server (Steam app 349090)"
-log "Running SteamCMD app_update 349090 validate"; "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$QLDS" +login anonymous +app_update 349090 validate +quit
-[ -x "$QLDS/qzeroded.x64" ] || fail "QLDS did not install qzeroded.x64 as expected."
-log "QLDS binary: $(ls -lh "$QLDS/qzeroded.x64")"; if command -v ldd >/dev/null 2>&1; then log "QLDS ldd output (plain) follows:"; ldd "$QLDS/qzeroded.x64" || true; log "QLDS ldd output with runtime LD_LIBRARY_PATH=$QLDS follows:"; LD_LIBRARY_PATH="$QLDS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$QLDS/qzeroded.x64" || true; fi
-say "Preparing Python environment"
-log "system python: $(command -v python3)"; python3 --version; if [ ! -d "$VENV" ]; then python3 -m venv "$VENV"; fi; "$VENV/bin/python" --version; "$VENV/bin/python" -m pip install --upgrade pip wheel
-# Prefer an already-installed Rust toolchain. Re-running rustup-init on every
-# repair made an otherwise healthy local setup depend on static.rust-lang.org
-# being reachable, even when nightly was already installed.
-[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
-export PATH="$HOME/.cargo/bin:$PATH"
 
-if ! command -v rustup >/dev/null 2>&1; then
-  say "Installing Rust toolchain locally for shinqlx"
-  log "rustup is not installed; downloading rustup-init."
-  if ! curl --proto '=https' --tlsv1.2 --fail --retry 3 -sSf https://sh.rustup.rs | sh -s -- -y --profile default; then
-    fail "Rust is not installed and rustup could not be downloaded. Check DNS/Internet access to static.rust-lang.org, then run Solo Engine setup again."
-  fi
+# ----------------------------------------------------- dedicated server
+if [ "$NEED_QLDS" -eq 1 ]; then
+  say "Installing local SteamCMD"
+  if [ ! -x "$STEAMCMD_DIR/steamcmd.sh" ]; then log "Downloading SteamCMD"; curl -L --fail --retry 3 -o "$RUNTIME/steamcmd_linux.tar.gz" https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz; tar -xzf "$RUNTIME/steamcmd_linux.tar.gz" -C "$STEAMCMD_DIR"; else log "SteamCMD already present: $STEAMCMD_DIR/steamcmd.sh"; fi
+  "$STEAMCMD_DIR/steamcmd.sh" +quit >/dev/null 2>&1 || log "WARNING: SteamCMD smoke test returned non-zero"
+  say "Installing/updating Quake Live Dedicated Server (Steam app $QLDS_APP_ID)"
+  log "Running SteamCMD app_update $QLDS_APP_ID validate"; "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$QLDS" +login anonymous +app_update "$QLDS_APP_ID" validate +quit
+  qlds_installed || fail "QLDS did not install qzeroded.x64 as expected."
+else
+  say "Quake Live Dedicated Server already installed; skipping download"
+  log "Using existing QLDS at $QLDS (buildid $(qlds_buildid)). Run with --repair to re-download/validate it."
+fi
+mkdir -p "$PLUGIN_DIR"
+log "QLDS binary: $(ls -lh "$QLDS/qzeroded.x64")"; if command -v ldd >/dev/null 2>&1; then log "QLDS ldd output (plain) follows:"; ldd "$QLDS/qzeroded.x64" || true; log "QLDS ldd output with runtime LD_LIBRARY_PATH=$QLDS follows:"; LD_LIBRARY_PATH="$QLDS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$QLDS/qzeroded.x64" || true; fi
+
+# --------------------------------------------------------------- shinqlx
+build_shinqlx(){
+  say "Preparing Python environment"
+  log "system python: $(command -v python3)"; python3 --version; if [ ! -d "$VENV" ]; then python3 -m venv "$VENV"; fi; "$VENV/bin/python" --version; "$VENV/bin/python" -m pip install --upgrade pip wheel
+  # Prefer an already-installed Rust toolchain. Re-running rustup-init on every
+  # repair made an otherwise healthy local setup depend on static.rust-lang.org
+  # being reachable, even when nightly was already installed.
   [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
   export PATH="$HOME/.cargo/bin:$PATH"
-else
-  say "Using existing Rust installation"
-  log "Existing rustup found; skipping rustup installer download."
-fi
 
-command -v rustup >/dev/null 2>&1 || fail "rustup was not found after Rust setup."
-log "rustup: $(command -v rustup)"; rustup --version
-log "Installed Rust toolchains:"; rustup toolchain list || true
-
-if rustup toolchain list | grep -Eq '^nightly(-[^ ]+)?([[:space:]]|$)'; then
-  log "Nightly Rust toolchain already installed; skipping network install."
-else
-  log "Nightly Rust is missing; downloading it now."
-  if ! rustup toolchain install nightly --profile default; then
-    fail "Nightly Rust is required for shinqlx but could not be installed. Check DNS/Internet access to static.rust-lang.org and run setup again."
+  if ! command -v rustup >/dev/null 2>&1; then
+    say "Installing Rust toolchain locally for shinqlx"
+    log "rustup is not installed; downloading rustup-init."
+    if ! curl --proto '=https' --tlsv1.2 --fail --retry 3 -sSf https://sh.rustup.rs | sh -s -- -y --profile default; then
+      fail "Rust is not installed and rustup could not be downloaded. Check DNS/Internet access to static.rust-lang.org, then run Solo Engine setup again."
+    fi
+    [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+    export PATH="$HOME/.cargo/bin:$PATH"
+  else
+    say "Using existing Rust installation"
+    log "Existing rustup found; skipping rustup installer download."
   fi
-fi
 
-if rustup +nightly component list --installed 2>/dev/null | grep -q '^rust-src'; then
-  log "nightly rust-src component already installed."
-else
-  log "Installing nightly rust-src component."
-  if ! rustup +nightly component add rust-src; then
-    fail "The nightly rust-src component is required for shinqlx but could not be installed."
+  command -v rustup >/dev/null 2>&1 || fail "rustup was not found after Rust setup."
+  log "rustup: $(command -v rustup)"; rustup --version
+  log "Installed Rust toolchains:"; rustup toolchain list || true
+
+  if rustup toolchain list | grep -Eq '^nightly(-[^ ]+)?([[:space:]]|$)'; then
+    log "Nightly Rust toolchain already installed; skipping network install."
+  else
+    log "Nightly Rust is missing; downloading it now."
+    if ! rustup toolchain install nightly --profile default; then
+      fail "Nightly Rust is required for shinqlx but could not be installed. Check DNS/Internet access to static.rust-lang.org and run setup again."
+    fi
   fi
-fi
 
-# shinqlx currently requires nightly-only Cargo -Z functionality. Do not
-# change the user's global Rust default; force nightly only for this build and
-# for every child process spawned by pip/maturin.
-export RUSTUP_TOOLCHAIN=nightly
-log "RUSTUP_TOOLCHAIN=$RUSTUP_TOOLCHAIN"
-log "cargo selected for shinqlx: $(command -v cargo || true)"
-log "rustc selected for shinqlx: $(command -v rustc || true)"
-cargo --version
-rustc --version
-if ! cargo -Z help >/dev/null 2>&1; then
-  fail "Nightly Cargo is not active. shinqlx requires nightly Rust (-Z options). Try Solo Engine setup again after rustup finishes installing nightly."
-fi
-log "Nightly Cargo preflight passed (-Z options accepted)."
+  if rustup +nightly component list --installed 2>/dev/null | grep -q '^rust-src'; then
+    log "nightly rust-src component already installed."
+  else
+    log "Installing nightly rust-src component."
+    if ! rustup +nightly component add rust-src; then
+      fail "The nightly rust-src component is required for shinqlx but could not be installed."
+    fi
+  fi
 
-say "Locating libclang for Rust bindgen"
-LIBCLANG_SO="$(find /usr/lib /usr/local/lib -type f \( -name 'libclang.so' -o -name 'libclang.so.*' -o -name 'libclang-*.so' -o -name 'libclang-*.so.*' \) 2>/dev/null | sort -V | tail -n 1 || true)"
-if [ -z "$LIBCLANG_SO" ]; then
-  fail "libclang was not found. shinqlx uses Rust bindgen and requires libclang. Install the Ubuntu/Mint package 'libclang-dev' (and preferably 'clang'), then run setup again."
-fi
-export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
-log "libclang selected: $LIBCLANG_SO"
-log "LIBCLANG_PATH=$LIBCLANG_PATH"
-if command -v clang >/dev/null 2>&1; then
-  log "clang: $(command -v clang)"
-  clang --version | head -n 2 || true
+  # shinqlx currently requires nightly-only Cargo -Z functionality. Do not
+  # change the user's global Rust default; force nightly only for this build and
+  # for every child process spawned by pip/maturin.
+  export RUSTUP_TOOLCHAIN=nightly
+  log "RUSTUP_TOOLCHAIN=$RUSTUP_TOOLCHAIN"
+  log "cargo selected for shinqlx: $(command -v cargo || true)"
+  log "rustc selected for shinqlx: $(command -v rustc || true)"
+  cargo --version
+  rustc --version
+  if ! cargo -Z help >/dev/null 2>&1; then
+    fail "Nightly Cargo is not active. shinqlx requires nightly Rust (-Z options). Try Solo Engine setup again after rustup finishes installing nightly."
+  fi
+  log "Nightly Cargo preflight passed (-Z options accepted)."
+
+  say "Locating libclang for Rust bindgen"
+  LIBCLANG_SO="$(find /usr/lib /usr/local/lib -type f \( -name 'libclang.so' -o -name 'libclang.so.*' -o -name 'libclang-*.so' -o -name 'libclang-*.so.*' \) 2>/dev/null | sort -V | tail -n 1 || true)"
+  if [ -z "$LIBCLANG_SO" ]; then
+    fail "libclang was not found. shinqlx uses Rust bindgen and requires libclang. Install the Ubuntu/Mint package 'libclang-dev' (and preferably 'clang'), then run setup again."
+  fi
+  export LIBCLANG_PATH="$(dirname "$LIBCLANG_SO")"
+  log "libclang selected: $LIBCLANG_SO"
+  log "LIBCLANG_PATH=$LIBCLANG_PATH"
+  if command -v clang >/dev/null 2>&1; then
+    log "clang: $(command -v clang)"
+    clang --version | head -n 2 || true
+  else
+    log "WARNING: clang executable not found. libclang is sufficient for normal bindgen use, but the 'clang' package is recommended."
+  fi
+  if [ ! -r "$LIBCLANG_SO" ]; then
+    fail "Detected libclang is not readable: $LIBCLANG_SO"
+  fi
+
+  say "Building/installing shinqlx in the private venv"
+  "$VENV/bin/python" -m pip install --upgrade maturin
+  log "Installing shinqlx with RUSTUP_TOOLCHAIN=nightly"
+  "$VENV/bin/python" -m pip install --upgrade -v shinqlx
+}
+
+if [ "$NEED_BUILD" -eq 1 ]; then
+  build_shinqlx
+  shinqlx_installed || fail "shinqlx did not install a shared library into $VENV."
 else
-  log "WARNING: clang executable not found. libclang is sufficient for normal bindgen use, but the 'clang' package is recommended."
+  say "shinqlx already built; skipping Rust toolchain and compile"
+  log "Using existing shinqlx: $(shinqlx_library). Run with --repair to rebuild it."
 fi
-if [ ! -r "$LIBCLANG_SO" ]; then
-  fail "Detected libclang is not readable: $LIBCLANG_SO"
-fi
-
-say "Building/installing shinqlx in the private venv"
-"$VENV/bin/python" -m pip install --upgrade maturin
-log "Installing shinqlx with RUSTUP_TOOLCHAIN=nightly"
-"$VENV/bin/python" -m pip install --upgrade -v shinqlx
 log "pip show shinqlx:"; "$VENV/bin/python" -m pip show shinqlx || true
 log "shinqlx shared libraries:"; find "$VENV" -type f -path '*/shinqlx/*.so' -print || true
+
+# ------------------------------------------- plugins, config, self-test
 say "Installing Solo Engine v5 plugin package"
 rm -rf "$PLUGIN_DIR"
 mkdir -p "$PLUGIN_DIR/modes"
@@ -191,7 +271,7 @@ if "$SOURCE_DIR/self_test.sh"; then
   log "SELF_TEST_OK=$RUNTIME/SELF_TEST_OK"
   log "READY=$RUNTIME/READY"
 else
-  fail "The Solo Engine installed but its real QLDS/shinqlx/plugin self-test failed. Open the latest self-test/start log."
+  fail "The Solo Engine installed but its real QLDS/shinqlx/plugin self-test failed. Open the latest self-test/start log. If it keeps failing, run setup again and choose full repair (r)."
 fi
 log "Full setup log: $LOG"
 echo "The Solo Engine v5 is verified. The launcher can now start all advertised Solo modes."; echo; echo "Press Enter to close this terminal."; read -r _ || true
