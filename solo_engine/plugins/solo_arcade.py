@@ -298,6 +298,11 @@ class solo_arcade(minqlx.Plugin):
             zmq_enabled = 0
         if zmq_enabled != 1:
             raise RuntimeError("zmq_stats_enable must be 1 before solo_arcade loads")
+        # Deaths/kills arrive only through shinqlx's ZMQ stats listener, which
+        # uses PLAIN auth; libzmq rejects an empty password, so the listener
+        # (and every death event) would silently never exist.
+        if not str(self.get_cvar("zmq_stats_password") or "").strip():
+            raise RuntimeError("zmq_stats_password must be non-empty: shinqlx's stats listener cannot connect without it")
 
     def _configure_engine(self):
         # Clear Quake Live's training-match state; earlier builds turned it on

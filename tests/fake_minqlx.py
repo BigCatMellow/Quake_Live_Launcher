@@ -99,7 +99,7 @@ class FakeGame:
 class FakeServer:
     def __init__(self):
         self.players={}; self.next_client_id=1
-        self.cvars={"zmq_stats_enable":"1","mapname":"campgrounds"}
+        self.cvars={"zmq_stats_enable":"1","zmq_stats_password":"fake-password","mapname":"campgrounds"}
         self.hooks={}; self.commands=[]; self.console=[]; self.messages=[]; self.scheduler=[]
         self._counter=itertools.count(); self.now=0.0
         self.game=FakeGame(self)

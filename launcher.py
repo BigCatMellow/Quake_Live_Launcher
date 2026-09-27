@@ -397,6 +397,62 @@ def launch_solo_exit_debug_watcher(game_dir=None, log_path=None) -> None:
     )
 
 
+# ----------------------------
+# Quake client process detection (overrides for the retained payload)
+# ----------------------------
+# The payload matched any process whose command line mentions "Quake Live",
+# which includes short-lived helpers (map sync, Steam's launch wrapper) that
+# carry the game folder in their arguments. The watchers also trusted a single
+# sighting, so a blip at launch counted as "Quake started" and the next check
+# as "Quake closed": the post-game report fired at launch
+# ("quake-client-never-appeared") and binds could be restored before the game
+# even ran. Detection now ignores our own helpers, and both watchers require a
+# state to hold for several seconds.
+_payload_quake_running = quake_running
+_NOT_THE_CLIENT = ("quake-live-launcher", "launcher.py", "sync_maps.py", "qzeroded", "steamcmd")
+QUAKE_STABLE_SECONDS = 4.0
+QUAKE_APPEAR_TIMEOUT = 180.0
+
+
+def quake_running() -> bool:
+    pgrep = shutil.which("pgrep")
+    if not pgrep:
+        return False
+    try:
+        proc = subprocess.run([pgrep, "-af", r"(quakelive|quakelive_steam|Quake Live)"],
+                              text=True, capture_output=True, timeout=3)
+    except Exception:
+        return False
+    if proc.returncode != 0:
+        return False
+    for line in proc.stdout.splitlines():
+        lowered = line.lower()
+        if not any(marker in lowered for marker in _NOT_THE_CLIENT):
+            return True
+    return False
+
+
+def wait_for_quake_state(want: bool, *, stable_for: float = QUAKE_STABLE_SECONDS, timeout=None,
+                         poll: float = 1.0, running=None, sleep=time.sleep, clock=time.time) -> bool:
+    """Block until Quake has been running (want=True) / gone (want=False) for
+    `stable_for` consecutive seconds. Returns False if `timeout` passes first."""
+    running = running or quake_running
+    start = clock()
+    since = None
+    while True:
+        now = clock()
+        if bool(running()) == want:
+            if since is None:
+                since = now
+            if now - since >= stable_for:
+                return True
+        else:
+            since = None
+        if timeout is not None and now - start >= timeout:
+            return False
+        sleep(poll)
+
+
 def _solo_exit_debug_watcher_main(payload: str) -> int:
     try:
         data = json.loads(payload)
@@ -408,20 +464,31 @@ def _solo_exit_debug_watcher_main(payload: str) -> int:
 
     # A detached watcher survives launcher/plugin failures. It waits for the
     # actual client process, then captures state after Quake has fully exited.
-    deadline = time.time() + 120
-    while time.time() < deadline and not quake_running():
-        time.sleep(0.5)
-    if not quake_running():
+    if not wait_for_quake_state(True, timeout=QUAKE_APPEAR_TIMEOUT):
         result = upload_solo_exit_debug(game_dir, reason="quake-client-never-appeared")
         if log_path:
             append_solo_log(log_path, f"Post-game debug result: {json.dumps(result, sort_keys=True)}")
         return 0
-    while quake_running():
-        time.sleep(1.0)
+    wait_for_quake_state(False)
     time.sleep(2.0)
     result = upload_solo_exit_debug(game_dir, reason="quake-exit")
     if log_path:
         append_solo_log(log_path, f"Post-game debug result: {json.dumps(result, sort_keys=True)}")
+    return 0
+
+
+def _restore_watcher_main(payload: str) -> int:
+    """Restore the binds the Solo controls cfg touched, after Quake really exits."""
+    try:
+        data = json.loads(payload)
+        game_dir = Path(data["game_dir"])
+        originals = dict(data.get("originals") or {})
+    except Exception:
+        return 2
+    if wait_for_quake_state(True, timeout=QUAKE_APPEAR_TIMEOUT):
+        wait_for_quake_state(False)
+        time.sleep(1.5)  # let Quake finish writing qzconfig.cfg
+    restore_strafe_binds(game_dir, originals)
     return 0
 
 

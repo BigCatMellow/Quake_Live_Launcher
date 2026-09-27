@@ -13,6 +13,11 @@ PORT="${QLL_SOLO_PORT:-27960}"
 SKIP_READY_CHECK="${QLL_SKIP_READY_CHECK:-0}"
 # The Director probe (run_director_probe.sh) loads solo_probe instead.
 PLUGINS="${QLL_PLUGINS:-solo_directed}"
+# shinqlx's stats listener (the ONLY source of death/kill events) connects with
+# ZMQ PLAIN auth using zmq_stats_password; libzmq rejects an empty PLAIN
+# password with EINVAL ("zmq error: InvalidArgument"), which silently killed
+# the listener on every start. Use a fresh random password per launch.
+ZMQ_PASSWORD="${QLL_ZMQ_PASSWORD:-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')}"
 
 mkdir -p "$LOG_DIR" "$RUNTIME"
 fallback_log="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-solo-start.log"
@@ -116,6 +121,7 @@ fi
 # Quake Live disconnects clients that go faster ("flooding the server"). This
 # server only listens on 127.0.0.1, so flood protection has nothing to protect.
 log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox (permanent warmup) + encounter Director"
+LOG_OFFSET=$(stat -c %s "$LOG" 2>/dev/null || echo 0)
 (
   cd "$QLDS" || exit 91
   export VIRTUAL_ENV="$VENV"
@@ -134,6 +140,7 @@ log "Launching qzeroded.x64 on 127.0.0.1:$PORT using TDM combat sandbox (permane
     +set qlx_soloMode "$MODE" \
     +set zmq_stats_enable 1 \
     +set zmq_stats_port "$PORT" \
+    +set zmq_stats_password "$ZMQ_PASSWORD" \
     +set bot_minplayers 0 \
     +set g_friendlyFire 0 \
     +set g_teamForceBalance 0 \
@@ -187,7 +194,23 @@ PY
     socket_ok=1
   fi
 
+  # A dead stats listener means the plugin never sees a kill or a death.
+  if tail -c +"$((LOG_OFFSET + 1))" "$LOG" 2>/dev/null | grep -q "zmq error"; then
+    log "ERROR: shinqlx's stats listener failed to connect (see 'zmq error' above); kills and deaths would never reach the Solo plugin."
+    kill "$pid" 2>/dev/null || true
+    rm -f "$PIDFILE"
+    exit 8
+  fi
+
   if [ "$plugin_ok" -eq 1 ] && [ "$socket_ok" -eq 1 ]; then
+    # The listener thread starts right after plugin load; give it a moment to fail.
+    sleep 1
+    if tail -c +"$((LOG_OFFSET + 1))" "$LOG" 2>/dev/null | grep -q "zmq error"; then
+      log "ERROR: shinqlx's stats listener failed to connect (see 'zmq error' above); kills and deaths would never reach the Solo plugin."
+      kill "$pid" 2>/dev/null || true
+      rm -f "$PIDFILE"
+      exit 8
+    fi
     log "HEALTH OK: PID alive, Director plugin handshake verified for $MODE, game socket $PORT available"
     log "---- Solo Engine startup successful ----"
     exit 0
