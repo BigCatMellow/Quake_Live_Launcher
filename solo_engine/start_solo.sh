@@ -89,16 +89,22 @@ else
   log "WARNING: no game_dir in session; skipping map sync"
 fi
 
-if [ -f "$PIDFILE" ]; then
-  oldpid=$(cat "$PIDFILE" 2>/dev/null || true)
-  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
-    log "Stopping previous Solo server PID $oldpid"
-    kill "$oldpid" 2>/dev/null || true
-    sleep 1
+# A previous server that is still up keeps the port; the new one then falls
+# back to PORT+1 while the game client connects to the OLD one on PORT. Stop it
+# properly (SIGTERM, then SIGKILL) and refuse to start while anything else
+# holds the port.
+log "Stopping any previous Solo server on port $PORT"
+QLL_SOLO_PORT="$PORT" "$SOURCE_DIR/stop_solo.sh" >>"$LOG" 2>&1 || log "WARNING: stop_solo.sh reported a problem (see above)"
+rm -f "$PIDFILE" "$PLUGIN_READY"
+holders=$("$VENV/bin/python" "$SOURCE_DIR/solo_ports.py" owners "$PORT" "$QLDS/qzeroded.x64" 2>>"$LOG" || true)
+if [ -n "$holders" ]; then
+  log "Port $PORT is still in use:"
+  printf '%s\n' "$holders" | sed 's/^/[port-owner] /' | tee -a "$LOG"
+  if printf '%s\n' "$holders" | grep -q ' foreign '; then
+    fail 9 "Port $PORT is held by another program (PID/name above). Close it, or set QLL_SOLO_PORT to a free port."
   fi
-  rm -f "$PIDFILE"
+  fail 9 "A previous Solo server still holds port $PORT and could not be stopped. Run: kill -9 $(printf '%s\n' "$holders" | awk '{print $1}' | sort -u | tr '\n' ' ')"
 fi
-rm -f "$PLUGIN_READY"
 
 log "Locating shinqlx preload shared library"
 SHINQLX_LIB=$(find "$VENV" -type f -path '*/shinqlx/*.so' -print -quit)
@@ -158,11 +164,18 @@ pid=$!
 echo "$pid" > "$PIDFILE"
 log "qzeroded launched as PID $pid"
 
-ss_available=0
-command -v ss >/dev/null 2>&1 && ss_available=1
+# Engine log lines that mean this server did not get the port it was given.
+BIND_FAILURES='UDP_OpenSocket: bind: Address already in use|zmq PUB socket error'
+kill_new_server(){
+  kill -TERM "$pid" 2>/dev/null || true
+  for _ in $(seq 1 10); do kill -0 "$pid" 2>/dev/null || break; sleep 0.2; done
+  kill -KILL "$pid" 2>/dev/null || true
+  rm -f "$PIDFILE"
+}
+port_owners(){ "$VENV/bin/python" "$SOURCE_DIR/solo_ports.py" owners "$PORT" "$QLDS/qzeroded.x64" 2>/dev/null | sed 's/^/[port-owner] /' | tee -a "$LOG"; }
 plugin_ok=0
 socket_ok=0
-for attempt in $(seq 1 50); do
+for attempt in $(seq 1 "${QLL_START_ATTEMPTS:-50}"); do
   sleep 0.4
   if ! kill -0 "$pid" 2>/dev/null; then
     wait "$pid" 2>/dev/null; rc=$?
@@ -172,12 +185,14 @@ for attempt in $(seq 1 50); do
   fi
 
   if [ -f "$PLUGIN_READY" ]; then
-    if "$VENV/bin/python" - "$PLUGIN_READY" "$MODE" >>"$LOG" 2>&1 <<'PY'
+    if "$VENV/bin/python" - "$PLUGIN_READY" "$MODE" "$pid" >>"$LOG" 2>&1 <<'PY'
 import json,sys
 p=json.load(open(sys.argv[1]))
 mode=sys.argv[2]
 if p.get('ready') is not True: raise SystemExit(2)
 if p.get('mode') != mode: raise SystemExit(3)
+# Written by the plugin inside qzeroded, so it must be THIS server's PID.
+if int(p.get('pid') or 0) != int(sys.argv[3]): raise SystemExit(4)
 print('plugin handshake ok:', p)
 PY
     then
@@ -185,20 +200,23 @@ PY
     fi
   fi
 
-  if [ "$ss_available" -eq 1 ]; then
-    sockets=$(ss -lun 2>&1 || true)
-    if printf '%s\n' "$sockets" | grep -Eq "(127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\*):${PORT}\\b"; then
-      socket_ok=1
-    fi
-  elif [ "$attempt" -ge 12 ]; then
+  # The port must belong to THIS server, not just to somebody: a leftover
+  # server on the port passed the old "is anything listening" check.
+  if "$VENV/bin/python" "$SOURCE_DIR/solo_ports.py" owns "$pid" "$PORT" 2>>"$LOG"; then
     socket_ok=1
+  fi
+
+  if tail -c +"$((LOG_OFFSET + 1))" "$LOG" 2>/dev/null | grep -Eq "$BIND_FAILURES"; then
+    log "ERROR: the new server could not bind port $PORT ('Address already in use' / 'zmq PUB socket error' above); another process holds it:"
+    port_owners
+    kill_new_server
+    exit 9
   fi
 
   # A dead stats listener means the plugin never sees a kill or a death.
   if tail -c +"$((LOG_OFFSET + 1))" "$LOG" 2>/dev/null | grep -q "zmq error"; then
     log "ERROR: shinqlx's stats listener failed to connect (see 'zmq error' above); kills and deaths would never reach the Solo plugin."
-    kill "$pid" 2>/dev/null || true
-    rm -f "$PIDFILE"
+    kill_new_server
     exit 8
   fi
 
@@ -207,17 +225,18 @@ PY
     sleep 1
     if tail -c +"$((LOG_OFFSET + 1))" "$LOG" 2>/dev/null | grep -q "zmq error"; then
       log "ERROR: shinqlx's stats listener failed to connect (see 'zmq error' above); kills and deaths would never reach the Solo plugin."
-      kill "$pid" 2>/dev/null || true
-      rm -f "$PIDFILE"
+      kill_new_server
       exit 8
     fi
-    log "HEALTH OK: PID alive, Director plugin handshake verified for $MODE, game socket $PORT available"
+    log "HEALTH OK: PID alive, Director plugin handshake verified for $MODE, server owns 127.0.0.1:$PORT"
     log "---- Solo Engine startup successful ----"
     exit 0
   fi
 done
 
 log "ERROR: startup timed out; plugin_ok=$plugin_ok socket_ok=$socket_ok"
+log "Port $PORT owners:"; port_owners
+kill_new_server
 if [ -f "$PLUGIN_READY" ]; then log "plugin_ready.json:"; cat "$PLUGIN_READY" >>"$LOG" 2>&1; fi
 if [ -f "$HOME_PATH/minqlx.log" ]; then log "minqlx.log tail:"; tail -n 120 "$HOME_PATH/minqlx.log" >>"$LOG" 2>&1; fi
 tail -n 160 "$LOG" | sed 's/^/[server-tail] /' | tee -a "$LOG" >/dev/null

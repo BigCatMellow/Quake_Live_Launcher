@@ -29,7 +29,7 @@ if _WAS_MAIN:
 exec(compile(_SOURCE, str(_BASE / "launcher_impl.py"), "exec"), globals(), globals())
 globals()["__name__"] = _ORIGINAL_NAME
 
-APP_VERSION = "5.0-alpha-controls1"
+APP_VERSION = "5.0-alpha-ports1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
 SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"
@@ -492,6 +492,9 @@ def _restore_watcher_main(payload: str) -> int:
     return 0
 
 
+SOLO_START_TIMEOUT = 75
+
+
 def launch_solo_mode(
     steam_cmd,
     game_dir=None,
@@ -567,12 +570,16 @@ def launch_solo_mode(
 
         status(f"Starting local Solo Engine server. Log: {log_path}")
         try:
-            proc = subprocess.run([str(starter)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=35)
+            # Budget: map sync + up to ~10 s stopping a stubborn old server + a 20 s health loop.
+            proc = subprocess.run([str(starter)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=SOLO_START_TIMEOUT)
         except subprocess.TimeoutExpired:
-            status("ERROR: start_solo.sh did not finish its health check within 35 seconds.")
+            status(f"ERROR: start_solo.sh did not finish its health check within {SOLO_START_TIMEOUT} seconds.")
             return
         except Exception as exc:
             status(f"ERROR: could not run start_solo.sh: {exc}")
+            return
+        if proc.returncode == 9:
+            status("ERROR: the Solo server port 127.0.0.1:27960 is held by another process that could not be stopped. The log names its PID; close it (or reboot) and retry.")
             return
         if proc.returncode != 0:
             status(f"ERROR: Solo server startup failed with exit code {proc.returncode}. Open the latest log for details.")

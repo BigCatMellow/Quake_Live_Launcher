@@ -44,7 +44,7 @@ STATE_FILE = Path.home() / ".config/quake-live-launcher/arena_run_state_v5.json"
 RUNTIME_DIR = Path.home() / ".local/share/quake-live-launcher/solo_runtime"
 PLUGIN_READY_FILE = RUNTIME_DIR / "plugin_ready.json"
 CONTROLS_FILE = RUNTIME_DIR / "controls.json"  # written by the launcher: {"dash_key": ...}
-PLUGIN_VERSION = "5.0-alpha-controls1"
+PLUGIN_VERSION = "5.0-alpha-ports1"
 
 # Forfeit root cause (v5.0-alpha-warmup1):
 #

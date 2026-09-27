@@ -12,12 +12,9 @@ TEST_LOG="$LOG_DIR/$(date +%Y%m%d-%H%M%S)-solo-self-test.log"
 BACKUP=""
 
 cleanup(){
-  if [ -f "$PIDFILE" ]; then
-    pid=$(cat "$PIDFILE" 2>/dev/null || true)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; sleep 0.5; fi
-    rm -f "$PIDFILE"
-  fi
-  rm -f "$READY_JSON"
+  # stop_solo.sh escalates to SIGKILL; a bare kill left test servers running.
+  QLL_SOLO_PORT=27961 "$SOURCE_DIR/stop_solo.sh" >>"$TEST_LOG" 2>&1 || true
+  rm -f "$PIDFILE" "$READY_JSON"
   if [ -n "$BACKUP" ] && [ -f "$BACKUP" ]; then
     mv -f "$BACKUP" "$SESSION"
   else

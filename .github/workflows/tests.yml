@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile Python
         run: |
-          python -m py_compile launcher.py launcher_gui.py qll_update.py tools/build_release.py solo_engine/sync_maps.py
+          python -m py_compile launcher.py launcher_gui.py qll_update.py tools/build_release.py solo_engine/sync_maps.py solo_engine/solo_ports.py
           python - <<'PY'
           import base64, gzip
           from pathlib import Path
@@ -59,6 +59,7 @@ jobs:
           test -x "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/self_test.sh"
           test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/plugins/solo_controller.py"
           test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/plugins/modes/horde.py"
+          test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_engine/solo_ports.py"
           HOME="$TEMP_HOME" python - "$TEMP_HOME" <<'PY'
           import importlib.util,sys
           from pathlib import Path
@@ -67,7 +68,7 @@ jobs:
           spec=importlib.util.spec_from_file_location('qll_installed_launcher',path)
           module=importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
-          assert module.APP_VERSION == '5.0-alpha-controls1', module.APP_VERSION
+          assert module.APP_VERSION == '5.0-alpha-ports1', module.APP_VERSION
           print('installed launcher import OK:', module.APP_VERSION)
           PY
           mkdir -p "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime"

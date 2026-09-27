@@ -372,6 +372,18 @@ Evidence: the player got past the start of the match (no instant forfeit reporte
 
 The absence of an instant forfeit in this run is the first live evidence for the 4.3 warmup fix. R-002 still needs an explicit confirmation run, now with working death events.
 
+## 4.7 "Still flashing" after installing 5.0-alpha-controls1: the client joined the OLD server
+
+Evidence (diagnostics, horde on trinity): `Stopping previous Solo server PID 11932`, then from the new server `UDP_OpenSocket: bind: Address already in use`, `Opening IP socket: 127.0.0.1:27961`, `zmq PUB socket error, bind failed: tcp://127.0.0.1:27960`; `ss -lunp` showed PID 11932 (the previous Arena Run server, old build) still on 27960 and the new PID on 27961.
+
+Cause: the start script sent one SIGTERM, slept 1 s and moved on. PID 11932 ignored it. shinqlx's stats listener is a non-daemon thread with an endless loop, so a server with a working listener can outlive SIGTERM. The new server fell back to 27961. The health check only asked "is anything listening on 27960?", which the old server answered, so startup reported HEALTH OK. The client connected to 27960, the old server with the training flag, and the message kept flashing. None of the 4.6 fixes could have been visible in that session.
+
+Fix (5.0-alpha-ports1):
+- `stop_solo.sh` sends SIGTERM, waits 5 s, then SIGKILL. It also stops Solo servers the PID file no longer knows about: any process running our `qlds/qzeroded.x64` that owns the port or was started with `+set net_port PORT`, which covers the fallback case. It never kills a process that isn't our qzeroded, even if a stale PID file names it.
+- `start_solo.sh` uses `stop_solo.sh`, then refuses to launch (exit 9) while anything still owns the port, and names the owner.
+- Health now needs three things: the new PID must own the UDP port (`solo_ports.py`, read from `/proc`), `plugin_ready.json` must carry the new PID, and the engine log must have no bind error (exit 9). A server that fails health is killed rather than left running.
+- The self-test cleanup uses `stop_solo.sh`. The launcher's start timeout goes from 35 s to 75 s.
+
 ---
 
 # 5. Persistent Solo / hot-load attempts
