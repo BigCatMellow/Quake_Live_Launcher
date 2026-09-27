@@ -117,7 +117,29 @@ if [ "$NEED_QLDS" -eq 1 ]; then
   if [ ! -x "$STEAMCMD_DIR/steamcmd.sh" ]; then log "Downloading SteamCMD"; curl -L --fail --retry 3 -o "$RUNTIME/steamcmd_linux.tar.gz" https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz; tar -xzf "$RUNTIME/steamcmd_linux.tar.gz" -C "$STEAMCMD_DIR"; else log "SteamCMD already present: $STEAMCMD_DIR/steamcmd.sh"; fi
   "$STEAMCMD_DIR/steamcmd.sh" +quit >/dev/null 2>&1 || log "WARNING: SteamCMD smoke test returned non-zero"
   say "Installing/updating Quake Live Dedicated Server (Steam app $QLDS_APP_ID)"
-  log "Running SteamCMD app_update $QLDS_APP_ID validate"; "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$QLDS" +login anonymous +app_update "$QLDS_APP_ID" validate +quit
+  # SteamCMD's update job sometimes never starts ("Timed out waiting for update
+  # to start ... state is 0x6 after update job"). That is a SteamCMD/Steam-side
+  # failure, so retry a few times, and never let it break a server that is
+  # already installed and working.
+  qlds_ok=0
+  for attempt in 1 2 3; do
+    log "Running SteamCMD app_update $QLDS_APP_ID validate (attempt $attempt/3)"
+    if "$STEAMCMD_DIR/steamcmd.sh" +force_install_dir "$QLDS" +login anonymous +app_update "$QLDS_APP_ID" validate +quit; then
+      qlds_ok=1; break
+    else
+      rc=$?
+    fi
+    log "WARNING: SteamCMD attempt $attempt failed (exit $rc)."
+    if [ "$attempt" -lt 3 ]; then sleep "${QLL_STEAMCMD_RETRY_DELAY:-10}"; fi
+  done
+  if [ "$qlds_ok" -eq 0 ]; then
+    if qlds_installed; then
+      log "WARNING: SteamCMD could not update/validate the server after 3 attempts; keeping the existing installation."
+      say "SteamCMD update failed; continuing with the installed server"
+    else
+      fail "SteamCMD could not download the Quake Live Dedicated Server after 3 attempts (a Steam-side error, often temporary). Wait a few minutes and run setup again. SteamCMD's own log: ~/.local/share/Steam/logs/stderr.txt"
+    fi
+  fi
   qlds_installed || fail "QLDS did not install qzeroded.x64 as expected."
 else
   say "Quake Live Dedicated Server already installed; skipping download"

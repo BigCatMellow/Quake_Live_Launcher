@@ -42,6 +42,13 @@ class SetupScriptTests(unittest.TestCase):
         # Stub SteamCMD: records its arguments and "installs" QLDS on app_update.
         write_exec(self.runtime / "steamcmd/steamcmd.sh", f"""#!/usr/bin/env bash
 echo "steamcmd $*" >> "{self.calls}"
+if [ -f "{base}/steamcmd_fails" ]; then
+  case "$*" in *app_update*)
+    echo " Update state (0x0) : Timed out waiting for update to start, bailing."
+    echo "Error! App '349090' state is 0x6 after update job."
+    exit 8;;
+  esac
+fi
 case "$*" in *app_update*)
   dir=""; prev=""
   for a in "$@"; do [ "$prev" = "+force_install_dir" ] && dir="$a"; prev="$a"; done
@@ -78,7 +85,7 @@ exit 0
 """)
 
     def env(self):
-        return {"HOME": str(self.home), "PATH": f"{self.bin}:/usr/bin:/bin", "TERM": "dumb"}
+        return {"HOME": str(self.home), "PATH": f"{self.bin}:/usr/bin:/bin", "TERM": "dumb", "QLL_STEAMCMD_RETRY_DELAY": "0"}
 
     def run_setup(self, *args):
         return subprocess.run(["bash", str(self.engine / "setup_solo_engine.sh"), *args], env=self.env(),
@@ -137,6 +144,26 @@ exit 0
         self.assertIn("+app_update 349090 validate", calls)
         self.assertIn("pip install --upgrade pip wheel", calls)
         self.assertNotEqual(proc.returncode, 0)  # stops at the (unreachable) Rust toolchain
+
+    def test_steamcmd_timeout_is_retried_then_keeps_existing_server(self):
+        # The exact failure from a real Mint run: update job never starts, state 0x6.
+        (Path(self.tmp.name) / "steamcmd_fails").write_text("")
+        self.install_qlds(); self.install_shinqlx()
+        proc = self.run_setup("--repair")
+        calls = self.calls_made()
+        self.assertEqual(calls.count("+app_update 349090 validate"), 3)
+        self.assertIn("keeping the existing installation", proc.stdout)
+        self.assertNotIn("SteamCMD could not download", proc.stdout)
+        self.assertIn("pip install --upgrade pip wheel", calls, "setup continued past the SteamCMD failure")
+
+    def test_steamcmd_failure_on_fresh_install_stops_with_clear_message(self):
+        (Path(self.tmp.name) / "steamcmd_fails").write_text("")
+        self.install_shinqlx()
+        proc = self.run_setup()
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(self.calls_made().count("+app_update 349090 validate"), 3)
+        self.assertIn("SteamCMD could not download the Quake Live Dedicated Server after 3 attempts", proc.stdout)
+        self.assertFalse(self.ready())
 
     def test_unknown_option_is_rejected(self):
         proc = self.run_setup("--bogus")
