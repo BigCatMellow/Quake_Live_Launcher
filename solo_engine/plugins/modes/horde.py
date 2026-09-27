@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import random
 
-BOT_ROSTER = ("slash", "keel", "visor", "anarki", "sarge", "ranger", "doom", "bones")
+# Nine distinct names: a wave never needs to repeat a name (bot deaths are
+# resolved by name, so duplicates mis-attribute kills).
+BOT_ROSTER = ("slash", "keel", "visor", "anarki", "sarge", "ranger", "doom", "bones", "xaero")
 
 
 @dataclass

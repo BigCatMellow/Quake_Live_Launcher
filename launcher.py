@@ -29,13 +29,14 @@ if _WAS_MAIN:
 exec(compile(_SOURCE, str(_BASE / "launcher_impl.py"), "exec"), globals(), globals())
 globals()["__name__"] = _ORIGINAL_NAME
 
-APP_VERSION = "5.0-alpha-warmup1"
+APP_VERSION = "5.0-alpha-modes1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
 SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"
 # Must match solo_directed.HOTLOAD_PROTOCOL. Protocol 2 = permanent-warmup
-# anti-forfeit sandbox; an older protocol-1 server is restarted instead.
-SOLO_HOTLOAD_PROTOCOL = 2
+# anti-forfeit sandbox; 3 = mode overhaul (!again, F5-F7 picks, records).
+# A server advertising an older protocol is restarted instead of reused.
+SOLO_HOTLOAD_PROTOCOL = 3
 GITHUB_DEBUG_REPO = "BigCatMellow/Quake_Live_Launcher"
 GITHUB_DEBUG_OWNER = "BigCatMellow"
 SOLO_GITHUB_DEBUG_STATUS_FILE = SOLO_RUNTIME_DIR / "last_github_debug.json"
@@ -46,6 +47,98 @@ def _atomic_json(path: Path, payload: dict) -> None:
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     temp.replace(path)
+
+
+# ----------------------------
+# Solo client controls (overrides for the retained payload)
+# ----------------------------
+# The payload's control helpers were stored with one escaping layer too many:
+# its bind regexes contain literal "\\s" (so they never match) and the Solo
+# controls cfg was joined with a literal backslash-n, producing ONE line that
+# starts with "//" -- the whole file was a comment, so the side-thruster keys
+# were never bound, and restores appended junk lines to qzconfig.cfg. These
+# replacements are picked up by the payload's own callers (detect_strafe_keys,
+# restore_strafe_binds, launch_solo_mode) because they share this module's
+# globals.
+
+# Arena Run upgrade picks on F5/F6/F7 (-> hidden "qlpick N" client command,
+# handled server-side like the qldash side thrusters). Originals (or "" when a
+# key was unbound) are restored by the existing restore watcher.
+SOLO_PICK_KEYS = ("F5", "F6", "F7")
+_BIND_LINE = re.compile(r'^\s*bind\s+(\S+)\s+"([^"]*)"', re.I | re.M)
+
+
+def _parse_binds(text: str) -> dict:
+    binds: dict = {}
+    for match in _BIND_LINE.finditer(text):
+        binds[match.group(1).upper()] = match.group(2)
+    return binds
+
+
+def _replace_bind_line(text: str, key: str, command: str) -> str:
+    safe = str(command).replace('"', "'")
+    replacement = f'bind {key} "{safe}"'
+    pattern = re.compile(rf'^[ \t]*bind[ \t]+{re.escape(key)}[ \t]+"[^"\n]*".*$', re.I | re.M)
+    if pattern.search(text):
+        return pattern.sub(lambda _m: replacement, text, count=1)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    return text + replacement + "\n"
+
+
+def _current_client_binds(game_dir: Path) -> dict:
+    binds: dict = {}
+    for cfg in reversed(_candidate_client_configs(Path(game_dir))):
+        try:
+            binds.update(_parse_binds(cfg.read_text(encoding="utf-8", errors="ignore")))
+        except Exception:
+            continue
+    return binds
+
+
+def write_solo_controls_cfg(game_dir, enabled: bool = True):
+    """Write the temporary Solo controls cfg (side thrusters + upgrade picks)."""
+    if not enabled:
+        return None, {}
+    game_dir = Path(game_dir)
+    left, right, originals = detect_strafe_keys(game_dir)
+    originals = dict(originals or {})
+    binds = _current_client_binds(game_dir)
+    lines = [
+        "// Temporary Solo Engine controls. Original binds are restored after Quake exits.",
+        'alias +qll_side_left "+moveleft; cmd qldash left"',
+        'alias -qll_side_left "-moveleft"',
+        'alias +qll_side_right "+moveright; cmd qldash right"',
+        'alias -qll_side_right "-moveright"',
+        f'bind {left} "+qll_side_left"',
+        f'bind {right} "+qll_side_right"',
+    ]
+    for index, key in enumerate(SOLO_PICK_KEYS, 1):
+        if key.upper() in (left.upper(), right.upper()):
+            continue
+        originals.setdefault(key, binds.get(key, ""))
+        lines.append(f'bind {key} "cmd qlpick {index}"')
+    lines.append('echo "^6Solo:^7 side thrusters on strafe keys; F5/F6/F7 pick Arena Run upgrades"')
+    cfg = game_dir / "baseq3" / "qllauncher_solo_controls.cfg"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return cfg, originals
+    originals = dict(originals or {})
+    try:
+        binds = _current_client_binds(Path(game_dir))
+        lines = []
+        for index, key in enumerate(SOLO_PICK_KEYS, 1):
+            if key not in originals:
+                originals[key] = binds.get(key, "")
+            lines.append(f'bind {key} "cmd qlpick {index}"')
+        lines.append('echo "^6Solo:^7 F5/F6/F7 pick Arena Run upgrades"')
+        text = cfg.read_text(encoding="utf-8")
+        if text and not text.endswith("\n"):
+            text += "\n"
+        cfg.write_text(text + "\n".join(lines) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+    return cfg, originals
 
 
 def solo_hot_switch_available() -> bool:

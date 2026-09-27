@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 import time
 
@@ -48,9 +49,10 @@ except ImportError:
 MATCH_REQUEST_FILE = RUNTIME_DIR / "match_request.json"
 MATCH_STATUS_FILE = RUNTIME_DIR / "match_status.json"
 HOTLOAD_READY_FILE = RUNTIME_DIR / "hotload_ready.json"
-# Protocol 2 = permanent-warmup sandbox.  A still-running protocol-1 server
-# (old forfeit-prone plugin) must be restarted, never hot-loaded into.
-HOTLOAD_PROTOCOL = 2
+# Protocol 2 = permanent-warmup sandbox; 3 = mode overhaul (!again, F5-F7
+# picks, records). A still-running older server must be restarted, never
+# hot-loaded into.
+HOTLOAD_PROTOCOL = 3
 MATCH_STATES = {"countdown", "in_progress"}
 
 
@@ -66,6 +68,7 @@ class solo_directed(solo_arcade):
         self._force_training_contract()
         self._write_hotload_ready()
         self.add_command("director", self.cmd_director)
+        self.add_command(("again", "restart", "replay"), self.cmd_again)
 
     # ---------- hot-load capability handshake ----------
     def _write_hotload_ready(self):
@@ -225,38 +228,8 @@ class solo_directed(solo_arcade):
         self.base_dash_charges = max(1, min(3, int(self.movement.get("dash_charges", 1))))
 
         self.controller.mode = self.mode
-        self.horde = HordeState(self.seed) if self.mode == "horde" else None
-        self.gun_game = GunGameState() if self.mode == "gun_game" else None
-        self.run = None
-        self.current_plan = None
-        self.mode_started = False
-        self.pending_resume_payload = None
-        self.preactive_dead_ids = set()
-        self.pending_replacements = 0
-        self.start_time = time.time()
-        self.kills = 0
-        self.player_deaths = 0
-        self.boss_round = 1
-        self.gauntlet_stage = 1
-        self.gauntlet_kind = "survival"
-        self.wipeout_round = 1
-        self.wipeout_respawn_level = 0
-        self.wipeout_generation = 0
-        self.target_bot_id = None
-        self.target_name = None
-        self.target_score = 0
-        self.challenge_goal = 0
-        self.random_round = 1
-        self.last_damage_time.clear()
-        self.last_hurt_time.clear()
-        self.last_regen_tick.clear()
-        self.lg_streak.clear()
-        self.rail_hits.clear()
-        self.dash_ready.clear()
-        self.dash_used.clear()
-        self.airborne.clear()
-        self.prev_vz.clear()
-        self.ground_ticks.clear()
+        # One shared reset keeps hot-load in lockstep with a fresh plugin.
+        self._reset_mode_state()
         self.director_runtime = DirectorRuntime(self, self.mode, self.difficulty, self.seed, RUNTIME_DIR)
         self.active_match_request_id = str(request_id)
 
@@ -290,6 +263,22 @@ class solo_directed(solo_arcade):
                 self.hold_warmup("frame check found a live match")
         self._poll_match_request(now)
         return super().handle_frame()
+
+    # ---------- replay ----------
+    def cmd_again(self, player, msg, channel):
+        """Replay the current mode in place with a fresh seed."""
+        session = dict(self.session)
+        session["mode"] = self.mode
+        session["seed"] = random.SystemRandom().randint(1, 2**31 - 1)
+        session["continue_run"] = False
+        session.setdefault("map", self.current_map_name() or "campgrounds")
+        request_id = f"again-{time.time_ns()}"
+        try:
+            self._hot_switch_session(session, request_id)
+        except Exception as exc:
+            self._log(f"!again failed: {exc}")
+            try: player.tell(f"^1Could not restart: {exc}")
+            except Exception: pass
 
     # ---------- diagnostics ----------
     def cmd_director(self, player, msg, channel):

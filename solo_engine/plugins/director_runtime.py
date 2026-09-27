@@ -28,6 +28,25 @@ WEAPON_KEYS = {1: "g", 2: "mg", 3: "sg", 4: "gl", 5: "rl", 6: "lg", 7: "rg", 8: 
 AMMO = {"mg": 160, "sg": 45, "gl": 30, "rl": 45, "lg": 140, "rg": 30, "pg": 140}
 
 
+def scaled_role_stats(role_hp: int, role_armor: int, plan: dict | None) -> tuple[int, int]:
+    """Combine a role's base stats with the mode plan's scaling.
+
+    Bosses use the plan's absolute values. Other plans author "health" as a
+    percentage of a standard 100-hp bot (Arena Run rounds, Gauntlet stages,
+    Last Stand threat) plus flat bonus "armor"; the role keeps its identity
+    (a bruiser stays tougher than a marksman) while the whole wave scales.
+    """
+    plan = plan or {}
+    if plan.get("boss"):
+        return int(plan.get("health", role_hp)), int(plan.get("armor", role_armor))
+    hp, armor = int(role_hp), int(role_armor)
+    if "health" in plan:
+        hp = max(1, int(round(hp * float(plan["health"]) / 100.0)))
+    if "armor" in plan:
+        armor = max(0, armor + int(plan["armor"]))
+    return hp, armor
+
+
 class DirectorRuntime:
     """Live adapter for the encounter Director and its learning layer.
 
@@ -204,8 +223,9 @@ class DirectorRuntime:
             role = track.role if track else "skirmisher"
             spec = ROLE_SPECS.get(role, ROLE_SPECS["skirmisher"])
             hp, armor = ROLE_STATS.get(role, ROLE_STATS["skirmisher"])
-            player.health = int(plan.get("health", hp)) if plan.get("boss") else hp
-            player.armor = int(plan.get("armor", armor)) if plan.get("boss") else armor
+            hp, armor = scaled_role_stats(hp, armor, plan)
+            player.health = hp
+            player.armor = armor
 
             weapons = {"g": True}
             ammo = {}

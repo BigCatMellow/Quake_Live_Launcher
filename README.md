@@ -118,21 +118,29 @@ That prevents an early bot kill during staggered spawning from deadlocking a wav
 
 | Mode | Behavior |
 | --- | --- |
-| Arena Run | Roguelite rounds, 3 upgrade choices, synergies, bosses, themed maps and finite/endless runs. |
-| Horde | Increasing waves until the player dies, with elite waves every fifth wave. |
-| Gun Game | Every kill advances the weapon ladder; finish with a Gauntlet kill. |
-| Boss Rush | Defeat 10 increasingly modified bosses. |
-| Wipeout Solo | Clear 5 squads; respawn delays grow and a round is won only when the squad is dead simultaneously. |
-| The Gauntlet | 10 seeded stages mixing weapon trials, survival, duel-like encounters and bosses. |
-| Last Stand | Continuous bots; one life; score is kills and survival time. |
+| Arena Run | Roguelite rounds, 3 upgrade choices (F5/F6/F7 or `!pick`), synergies, bosses, themed maps, scaling bot HP/armor, finite/endless runs. |
+| Horde | Increasing waves until the player dies, elite waves every fifth wave; ammo and health are topped up between waves. |
+| Gun Game | 2 kills per weapon through 7 weapons, then one Gauntlet kill. A bot Gauntlet kill demotes you a tier. |
+| Boss Rush | 10 bosses with rising HP, armor and damage; resupply between bosses. |
+| Wipeout Solo | Clear 5 squads with 3 lives; bot respawn delays grow and a round is won only when the squad is dead simultaneously. |
+| The Gauntlet | 10 seeded stages; weapon-trial stages hand you that weapon, with resupply each stage. |
+| Last Stand | One life. Threat level rises every 5 kills and every minute: more bots, higher skill, tougher and harder-hitting enemies. |
 | One Life | Reach 12 kills without dying. |
-| Bounty Hunt | Eliminate 8 marked targets while the rest interfere. |
-| Rocket Tag | Rocket-only target chase; eliminate 10 marked targets. |
-| Movement Hunter | Survive 90 seconds against armed bots. |
-| Predator | Start fragile, heal on kills, reach a 25-kill streak. |
-| Accuracy Trial | Clear 20 Lightning Gun kills, then review final weapon accuracy. |
-| Speedrun Combat | Clear 15 kills as fast as possible. |
+| Bounty Hunt | Eliminate 8 marked targets (Haste smoke trail) while the rest interfere. |
+| Rocket Tag | Rocket-only; eliminate 10 marked targets (Haste smoke trail). |
+| Movement Hunter | Survive 90 seconds against armed bots, with on-screen countdown callouts. |
+| Predator | Start fragile; kills heal you, but 8 seconds without a kill starts starvation. Reach 25 kills. |
+| Accuracy Trial | 20 Lightning Gun kills; results show LG hits, damage per kill and average/best time-to-kill. |
+| Speedrun Combat | 15 kills; the clock starts when the enemies are live, with splits at 5 and 10 against your best. |
 | Random Loadout | Reach 20 kills; weapon set rerolls every 4 kills and after death. |
+
+### After every run
+
+- A result summary with your progress, kills and time, plus personal-best comparison.
+- Records are kept per mode and difficulty (and Arena Run length) in
+  `~/.config/quake-live-launcher/solo_records.json`; `!best` shows them in game.
+- `!again` (or `!restart`) replays the same mode in place with a new seed, without
+  closing Quake or returning to the launcher.
 
 ## Arena Run upgrades
 
@@ -164,7 +172,9 @@ With Side Thrusters enabled:
 - Arena Run movement upgrades can add charges and thrust.
 
 The launcher temporarily wraps the keys currently bound to `+moveleft` and
-`+moveright`, then restores the original binds after Quake closes.
+`+moveright` (detected from your config, so ESDF/arrow layouts work), binds
+F5/F6/F7 to Arena Run upgrade picks, then restores the original binds after
+Quake closes.
 
 ## Map recommendations
 
