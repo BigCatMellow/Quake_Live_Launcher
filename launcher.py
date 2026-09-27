@@ -29,7 +29,7 @@ if _WAS_MAIN:
 exec(compile(_SOURCE, str(_BASE / "launcher_impl.py"), "exec"), globals(), globals())
 globals()["__name__"] = _ORIGINAL_NAME
 
-APP_VERSION = "5.0-alpha-director1"
+APP_VERSION = "5.0-alpha-update1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
 SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"

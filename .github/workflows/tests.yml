@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile Python
         run: |
-          python -m py_compile launcher.py launcher_gui.py solo_engine/sync_maps.py
+          python -m py_compile launcher.py launcher_gui.py qll_update.py tools/build_release.py solo_engine/sync_maps.py
           python - <<'PY'
           import base64, gzip
           from pathlib import Path
@@ -67,7 +67,7 @@ jobs:
           spec=importlib.util.spec_from_file_location('qll_installed_launcher',path)
           module=importlib.util.module_from_spec(spec)
           spec.loader.exec_module(module)
-          assert module.APP_VERSION == '5.0-alpha-director1', module.APP_VERSION
+          assert module.APP_VERSION == '5.0-alpha-update1', module.APP_VERSION
           print('installed launcher import OK:', module.APP_VERSION)
           PY
           mkdir -p "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime"
@@ -76,13 +76,11 @@ jobs:
           test -f "$TEMP_HOME/.local/share/quake-live-launcher/solo_runtime/sentinel"
           test ! -e "$TEMP_HOME/.local/bin/quake-live-launcher"
 
-      - name: Build install archive
+      - name: Build release artifacts (archive, manifest, installer)
         run: |
-          zip -r -q Quake_Live_Launcher_v5-alpha.zip \
-            launcher.py launcher_gui.py launcher_impl.py.gz.b64part* launcher_gui_impl.py.gz.b64part* \
-            resources solo_engine install.sh uninstall.sh run.sh README.md \
-            -x '*/__pycache__/*' '*.pyc'
-          unzip -t Quake_Live_Launcher_v5-alpha.zip >/dev/null
+          python tools/build_release.py --out dist --commit "$GITHUB_SHA"
+          unzip -t dist/Quake_Live_Launcher_v5-alpha.zip >/dev/null
+          bash -n dist/quake-live-launcher-installer.sh
 
       - name: Verify archive equals shipped source
         run: |
@@ -90,10 +88,10 @@ jobs:
           from pathlib import Path
           import hashlib, stat, tempfile, zipfile
 
-          archive = Path('Quake_Live_Launcher_v5-alpha.zip')
+          archive = Path('dist/Quake_Live_Launcher_v5-alpha.zip')
           roots = [Path('resources'), Path('solo_engine')]
           expected = {
-              Path('launcher.py'), Path('launcher_gui.py'), Path('install.sh'),
+              Path('launcher.py'), Path('launcher_gui.py'), Path('qll_update.py'), Path('install.sh'),
               Path('uninstall.sh'), Path('run.sh'), Path('README.md'),
               *Path('.').glob('launcher_impl.py.gz.b64part*'),
               *Path('.').glob('launcher_gui_impl.py.gz.b64part*'),
@@ -113,7 +111,7 @@ jobs:
               with zipfile.ZipFile(archive) as zf:
                   names = {Path(name) for name in zf.namelist() if not name.endswith('/')}
                   assert not any('__pycache__' in p.parts or p.suffix == '.pyc' for p in names), names
-                  assert names == expected, f'archive file set differs: missing={expected-names}, extra={names-expected}'
+                  assert names == expected | {Path('release.json')}, f'archive file set differs: missing={expected-names}, extra={names-expected}'
                   for rel in sorted(required_executable):
                       mode = (zf.getinfo(str(rel)).external_attr >> 16) & 0o777
                       assert mode & 0o111, f'archive executable bit missing: {rel} mode={oct(mode)}'
@@ -125,15 +123,17 @@ jobs:
           print('archive/source equality + executable modes OK:', len(expected), 'files')
           PY
 
-      - name: Upload install archive
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Quake_Live_Launcher_v5-alpha
-          path: Quake_Live_Launcher_v5-alpha.zip
+          path: dist/*
           if-no-files-found: error
 
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/v5-alpha'
+    # The installer and every installed launcher auto-update from this rolling
+    # release, so it is published from main, and only after all checks pass.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: product
     runs-on: ubuntu-latest
     permissions:
@@ -153,12 +153,19 @@ jobs:
           TITLE="Quake Live Launcher v5 Alpha (Latest)"
           ARCHIVE="Quake_Live_Launcher_v5-alpha.zip"
           CHECKSUM="$ARCHIVE.sha256"
-          sha256sum "$ARCHIVE" > "$CHECKSUM"
-          NOTES="Latest verified v5-alpha installer. Built from commit $GITHUB_SHA after the full test, install-smoke, archive-integrity, and executable-mode checks passed."
+          INSTALLER="quake-live-launcher-installer.sh"
+          sha256sum -c "$CHECKSUM"
+          VERSION="$(python3 -c 'import json; print(json.load(open("version.json"))["app_version"])')"
+          NOTES="Quake Live Launcher $VERSION, built from commit $GITHUB_SHA after the full test, install-smoke, archive-integrity, and executable-mode checks passed.
+
+          Install: download $INSTALLER and run: bash $INSTALLER
+          Installed launchers check this release on every start and update themselves."
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           fi
-          gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" --repo "$GITHUB_REPOSITORY" --clobber
+          # Manifest last: an updater that sees the new version.json must find the new archive.
+          gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" "$INSTALLER" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" version.json --repo "$GITHUB_REPOSITORY" --clobber
 
