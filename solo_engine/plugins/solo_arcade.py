@@ -43,7 +43,8 @@ SESSION_FILE = Path.home() / ".config/quake-live-launcher/solo_session.json"
 STATE_FILE = Path.home() / ".config/quake-live-launcher/arena_run_state_v5.json"
 RUNTIME_DIR = Path.home() / ".local/share/quake-live-launcher/solo_runtime"
 PLUGIN_READY_FILE = RUNTIME_DIR / "plugin_ready.json"
-PLUGIN_VERSION = "5.0-alpha-director1"
+CONTROLS_FILE = RUNTIME_DIR / "controls.json"  # written by the launcher: {"dash_key": ...}
+PLUGIN_VERSION = "5.0-alpha-ports1"
 
 # Forfeit root cause (v5.0-alpha-warmup1):
 #
@@ -291,18 +292,30 @@ class solo_arcade(minqlx.Plugin):
     def _require_runtime_contract(self):
         if self.mode not in SUPPORTED_MODES:
             raise RuntimeError(f"unsupported scripted Solo mode: {self.mode}")
-        if not hasattr(minqlx, "allow_single_player"):
-            raise RuntimeError("shinqlx/minqlx does not expose allow_single_player()")
         try:
             zmq_enabled = int(self.get_cvar("zmq_stats_enable") or 0)
         except Exception:
             zmq_enabled = 0
         if zmq_enabled != 1:
             raise RuntimeError("zmq_stats_enable must be 1 before solo_arcade loads")
+        # Deaths/kills arrive only through shinqlx's ZMQ stats listener, which
+        # uses PLAIN auth; libzmq rejects an empty password, so the listener
+        # (and every death event) would silently never exist.
+        if not str(self.get_cvar("zmq_stats_password") or "").strip():
+            raise RuntimeError("zmq_stats_password must be non-empty: shinqlx's stats listener cannot connect without it")
 
     def _configure_engine(self):
-        minqlx.allow_single_player(True)
+        # Clear Quake Live's training-match state; earlier builds turned it on
+        # as an anti-forfeit attempt and it drives the training HUD message.
+        try:
+            minqlx.allow_single_player(False)
+        except Exception:
+            pass
         cvars = {
+            "g_training": "0",
+            # Local-only server: never drop/kick the player for sending
+            # client commands (dash, upgrade picks) faster than 1/second.
+            "sv_floodProtect": "0",
             "sv_hostname": "Quake Live // Solo Engine v5",
             "bot_enable": "1", "bot_thinktime": "0", "bot_challenge": "1",
             "bot_aasoptimize": "1", "bot_rocketjump": "1", "bot_nochat": "1",
@@ -363,11 +376,9 @@ class solo_arcade(minqlx.Plugin):
             pass
 
     def handle_new_game(self):
-        minqlx.allow_single_player(True)
         self._configure_engine()
 
     def handle_map(self, map_name, factory):
-        minqlx.allow_single_player(True)
         self._configure_engine()
         self.airborne.clear(); self.dash_used.clear(); self.ground_ticks.clear()
         self.spawn_book.save(force=True)
@@ -611,7 +622,6 @@ class solo_arcade(minqlx.Plugin):
         if not is_player_object(player) or is_bot(player):
             return
         self.player_id = player.id
-        minqlx.allow_single_player(True)
         self._put_team(player, "red")
         if self.controller.pending_map:
             payload = self.controller.resume_map_if_ready(self.current_map_name(), player.id)
@@ -662,6 +672,7 @@ class solo_arcade(minqlx.Plugin):
         self.player_id = player.id
         self._put_team(player, "red")
         self._apply_human_loadout(player)
+        self._show_controls_hint(player)
         if self.pending_resume_payload is not None:
             payload = self.pending_resume_payload
             self.pending_resume_payload = None
@@ -671,6 +682,23 @@ class solo_arcade(minqlx.Plugin):
         if not self.mode_started and self.controller.phase == Phase.PREPARING:
             self.mode_started = True
             self._start_selected_mode()
+
+    # ---------- controls hint ----------
+    def _show_controls_hint(self, player):
+        if getattr(self, "controls_hint_shown", False):
+            return
+        self.controls_hint_shown = True
+        if not self.side_thrusters:
+            return
+        try:
+            data = json.loads(CONTROLS_FILE.read_text(encoding="utf-8"))
+            key = data.get("dash_key") if isinstance(data, dict) else None
+        except Exception:
+            key = None
+        if key:
+            player.tell(f"^6Side thrusters:^7 hold a strafe key and press ^3{key}^7 to dodge (ground) or dash (air).")
+        else:
+            player.tell("^6Side thrusters:^7 no free key was found for dash; use ^3!dash left^7 / ^3!dash right^7.")
 
     # ---------- spawn Director ----------
     def _learn_spawn(self, player):
@@ -1787,7 +1815,7 @@ class solo_arcade(minqlx.Plugin):
                 return minqlx.RET_STOP_ALL
             if verb != "qldash":
                 return
-            if len(parts) >= 2 and parts[1].lower() in ("left", "right"):
+            if len(parts) >= 2 and parts[1].lower() in ("left", "right", "auto"):
                 self.request_side_dash(player, parts[1].lower())
             return minqlx.RET_STOP_ALL
         except Exception:
@@ -1825,7 +1853,8 @@ class solo_arcade(minqlx.Plugin):
                 speed = math.hypot(vx, vy)
                 if speed < 20: return
                 if direction == "left": nx, ny = -vy / speed, vx / speed
-                else: nx, ny = vy / speed, -vx / speed
+                elif direction == "right": nx, ny = vy / speed, -vx / speed
+                else: nx, ny = vx / speed, vy / speed  # "auto" with no strafe input: boost along travel
             impulse = self._dash_power(); nvx, nvy = vx + nx * impulse, vy + ny * impulse
             speed = math.hypot(nvx, nvy)
             if speed > 950:
@@ -1903,6 +1932,6 @@ class solo_arcade(minqlx.Plugin):
         player.tell(f"^6RECORDS ({self.mode.replace('_', ' ')}, {self.difficulty}):^7 " + ", ".join(parts))
 
     def cmd_help(self, player, msg, channel):
-        player.tell("^6Solo Engine v5:^7 !run shows lifecycle state; !again replays with a new seed; !best shows your records; !dash left/right is a movement fallback.")
+        player.tell("^6Solo Engine v5:^7 !run shows lifecycle state; !again replays with a new seed; !best shows your records; your dash key (or !dash left/right) fires the side thrusters.")
         if self.mode == "arena_run":
             player.tell("^7Arena Run: press ^3F5/F6/F7^7 (or ^3!pick 1/2/3^7) and ^3!upgrades^7 between rounds.")

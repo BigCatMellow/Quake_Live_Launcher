@@ -29,15 +29,16 @@ if _WAS_MAIN:
 exec(compile(_SOURCE, str(_BASE / "launcher_impl.py"), "exec"), globals(), globals())
 globals()["__name__"] = _ORIGINAL_NAME
 
-APP_VERSION = "5.0-alpha-setup1"
+APP_VERSION = "5.0-alpha-ports1"
 SOLO_MATCH_REQUEST_FILE = SOLO_RUNTIME_DIR / "match_request.json"
 SOLO_MATCH_STATUS_FILE = SOLO_RUNTIME_DIR / "match_status.json"
 SOLO_HOTLOAD_READY_FILE = SOLO_RUNTIME_DIR / "hotload_ready.json"
 # Must match solo_directed.HOTLOAD_PROTOCOL. Protocol 2 = permanent-warmup
 # anti-forfeit sandbox; 3 = mode overhaul (!again, F5-F7 picks, records);
-# 4 = spawn Director (learned spawn points, placement, flankers).
+# 4 = spawn Director (learned spawn points, placement, flankers); 5 = no
+# training mode, flood protection off, dedicated dash key.
 # A server advertising an older protocol is restarted instead of reused.
-SOLO_HOTLOAD_PROTOCOL = 4
+SOLO_HOTLOAD_PROTOCOL = 5
 GITHUB_DEBUG_REPO = "BigCatMellow/Quake_Live_Launcher"
 GITHUB_DEBUG_OWNER = "BigCatMellow"
 SOLO_GITHUB_DEBUG_STATUS_FILE = SOLO_RUNTIME_DIR / "last_github_debug.json"
@@ -97,46 +98,61 @@ def _current_client_binds(game_dir: Path) -> dict:
     return binds
 
 
+# Side-thruster dash lives on ONE dedicated key. Earlier builds sent a hidden
+# "cmd qldash" on every strafe-key press; strafe is tapped constantly, and
+# Quake Live disconnects clients that send commands that fast ("Server
+# disconnected - flooding the server"). The first candidate you have not bound
+# is used; override with {"dash_key": "MOUSE4"} in solo_controls.json.
+SOLO_DASH_KEY_CANDIDATES = ("MOUSE4", "MOUSE5", "SHIFT", "ALT", "V", "G", "X", "Z")
+SOLO_CONTROLS_FILE = SOLO_RUNTIME_DIR / "controls.json"
+SOLO_CONTROLS_OVERRIDE = Path.home() / ".config/quake-live-launcher/solo_controls.json"
+_OLD_STRAFE_WRAPPERS = {"+qll_side_left": "+moveleft", "+qll_side_right": "+moveright"}
+
+
+def choose_solo_dash_key(binds: dict):
+    try:
+        override = json.loads(SOLO_CONTROLS_OVERRIDE.read_text(encoding="utf-8")).get("dash_key")
+    except Exception:
+        override = None
+    if override:
+        return str(override).upper()
+    for key in SOLO_DASH_KEY_CANDIDATES:
+        if not str(binds.get(key, "")).strip():
+            return key
+    return None
+
+
 def write_solo_controls_cfg(game_dir, enabled: bool = True):
-    """Write the temporary Solo controls cfg (side thrusters + upgrade picks)."""
+    """Write the temporary Solo controls cfg (dash key + upgrade picks)."""
     if not enabled:
         return None, {}
     game_dir = Path(game_dir)
-    left, right, originals = detect_strafe_keys(game_dir)
-    originals = dict(originals or {})
     binds = _current_client_binds(game_dir)
-    lines = [
-        "// Temporary Solo Engine controls. Original binds are restored after Quake exits.",
-        'alias +qll_side_left "+moveleft; cmd qldash left"',
-        'alias -qll_side_left "-moveleft"',
-        'alias +qll_side_right "+moveright; cmd qldash right"',
-        'alias -qll_side_right "-moveright"',
-        f'bind {left} "+qll_side_left"',
-        f'bind {right} "+qll_side_right"',
-    ]
+    originals: dict = {}
+    lines = ["// Temporary Solo Engine controls. Original binds are restored after Quake exits."]
+    # Repair strafe keys still bound to the old per-tap wrapper (for example
+    # after a session that ended in a flood disconnect before the restore ran).
+    for key, command in sorted(binds.items()):
+        plain = _OLD_STRAFE_WRAPPERS.get(str(command).strip().lower())
+        if plain:
+            lines.append(f'bind {key} "{plain}"')
+            originals[key] = plain
+    dash_key = choose_solo_dash_key(binds)
+    if dash_key:
+        originals.setdefault(dash_key, binds.get(dash_key, ""))
+        lines.append(f'bind {dash_key} "cmd qldash auto"')
     for index, key in enumerate(SOLO_PICK_KEYS, 1):
-        if key.upper() in (left.upper(), right.upper()):
+        if dash_key and key.upper() == dash_key:
             continue
         originals.setdefault(key, binds.get(key, ""))
         lines.append(f'bind {key} "cmd qlpick {index}"')
-    lines.append('echo "^6Solo:^7 side thrusters on strafe keys; F5/F6/F7 pick Arena Run upgrades"')
+    dash_text = f"hold a strafe key and press {dash_key} to dodge/air-dash" if dash_key else "use !dash left/right"
+    lines.append(f'echo "^6Solo:^7 side thrusters: {dash_text}; F5/F6/F7 pick Arena Run upgrades"')
     cfg = game_dir / "baseq3" / "qllauncher_solo_controls.cfg"
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return cfg, originals
-    originals = dict(originals or {})
     try:
-        binds = _current_client_binds(Path(game_dir))
-        lines = []
-        for index, key in enumerate(SOLO_PICK_KEYS, 1):
-            if key not in originals:
-                originals[key] = binds.get(key, "")
-            lines.append(f'bind {key} "cmd qlpick {index}"')
-        lines.append('echo "^6Solo:^7 F5/F6/F7 pick Arena Run upgrades"')
-        text = cfg.read_text(encoding="utf-8")
-        if text and not text.endswith("\n"):
-            text += "\n"
-        cfg.write_text(text + "\n".join(lines) + "\n", encoding="utf-8")
+        _atomic_json(SOLO_CONTROLS_FILE, {"dash_key": dash_key, "pick_keys": list(SOLO_PICK_KEYS), "written_at": time.time()})
     except Exception:
         pass
     return cfg, originals
@@ -381,6 +397,62 @@ def launch_solo_exit_debug_watcher(game_dir=None, log_path=None) -> None:
     )
 
 
+# ----------------------------
+# Quake client process detection (overrides for the retained payload)
+# ----------------------------
+# The payload matched any process whose command line mentions "Quake Live",
+# which includes short-lived helpers (map sync, Steam's launch wrapper) that
+# carry the game folder in their arguments. The watchers also trusted a single
+# sighting, so a blip at launch counted as "Quake started" and the next check
+# as "Quake closed": the post-game report fired at launch
+# ("quake-client-never-appeared") and binds could be restored before the game
+# even ran. Detection now ignores our own helpers, and both watchers require a
+# state to hold for several seconds.
+_payload_quake_running = quake_running
+_NOT_THE_CLIENT = ("quake-live-launcher", "launcher.py", "sync_maps.py", "qzeroded", "steamcmd")
+QUAKE_STABLE_SECONDS = 4.0
+QUAKE_APPEAR_TIMEOUT = 180.0
+
+
+def quake_running() -> bool:
+    pgrep = shutil.which("pgrep")
+    if not pgrep:
+        return False
+    try:
+        proc = subprocess.run([pgrep, "-af", r"(quakelive|quakelive_steam|Quake Live)"],
+                              text=True, capture_output=True, timeout=3)
+    except Exception:
+        return False
+    if proc.returncode != 0:
+        return False
+    for line in proc.stdout.splitlines():
+        lowered = line.lower()
+        if not any(marker in lowered for marker in _NOT_THE_CLIENT):
+            return True
+    return False
+
+
+def wait_for_quake_state(want: bool, *, stable_for: float = QUAKE_STABLE_SECONDS, timeout=None,
+                         poll: float = 1.0, running=None, sleep=time.sleep, clock=time.time) -> bool:
+    """Block until Quake has been running (want=True) / gone (want=False) for
+    `stable_for` consecutive seconds. Returns False if `timeout` passes first."""
+    running = running or quake_running
+    start = clock()
+    since = None
+    while True:
+        now = clock()
+        if bool(running()) == want:
+            if since is None:
+                since = now
+            if now - since >= stable_for:
+                return True
+        else:
+            since = None
+        if timeout is not None and now - start >= timeout:
+            return False
+        sleep(poll)
+
+
 def _solo_exit_debug_watcher_main(payload: str) -> int:
     try:
         data = json.loads(payload)
@@ -392,21 +464,35 @@ def _solo_exit_debug_watcher_main(payload: str) -> int:
 
     # A detached watcher survives launcher/plugin failures. It waits for the
     # actual client process, then captures state after Quake has fully exited.
-    deadline = time.time() + 120
-    while time.time() < deadline and not quake_running():
-        time.sleep(0.5)
-    if not quake_running():
+    if not wait_for_quake_state(True, timeout=QUAKE_APPEAR_TIMEOUT):
         result = upload_solo_exit_debug(game_dir, reason="quake-client-never-appeared")
         if log_path:
             append_solo_log(log_path, f"Post-game debug result: {json.dumps(result, sort_keys=True)}")
         return 0
-    while quake_running():
-        time.sleep(1.0)
+    wait_for_quake_state(False)
     time.sleep(2.0)
     result = upload_solo_exit_debug(game_dir, reason="quake-exit")
     if log_path:
         append_solo_log(log_path, f"Post-game debug result: {json.dumps(result, sort_keys=True)}")
     return 0
+
+
+def _restore_watcher_main(payload: str) -> int:
+    """Restore the binds the Solo controls cfg touched, after Quake really exits."""
+    try:
+        data = json.loads(payload)
+        game_dir = Path(data["game_dir"])
+        originals = dict(data.get("originals") or {})
+    except Exception:
+        return 2
+    if wait_for_quake_state(True, timeout=QUAKE_APPEAR_TIMEOUT):
+        wait_for_quake_state(False)
+        time.sleep(1.5)  # let Quake finish writing qzconfig.cfg
+    restore_strafe_binds(game_dir, originals)
+    return 0
+
+
+SOLO_START_TIMEOUT = 75
 
 
 def launch_solo_mode(
@@ -484,12 +570,16 @@ def launch_solo_mode(
 
         status(f"Starting local Solo Engine server. Log: {log_path}")
         try:
-            proc = subprocess.run([str(starter)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=35)
+            # Budget: map sync + up to ~10 s stopping a stubborn old server + a 20 s health loop.
+            proc = subprocess.run([str(starter)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=SOLO_START_TIMEOUT)
         except subprocess.TimeoutExpired:
-            status("ERROR: start_solo.sh did not finish its health check within 35 seconds.")
+            status(f"ERROR: start_solo.sh did not finish its health check within {SOLO_START_TIMEOUT} seconds.")
             return
         except Exception as exc:
             status(f"ERROR: could not run start_solo.sh: {exc}")
+            return
+        if proc.returncode == 9:
+            status("ERROR: the Solo server port 127.0.0.1:27960 is held by another process that could not be stopped. The log names its PID; close it (or reboot) and retry.")
             return
         if proc.returncode != 0:
             status(f"ERROR: Solo server startup failed with exit code {proc.returncode}. Open the latest log for details.")

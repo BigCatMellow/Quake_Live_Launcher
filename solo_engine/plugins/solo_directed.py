@@ -50,9 +50,9 @@ MATCH_REQUEST_FILE = RUNTIME_DIR / "match_request.json"
 MATCH_STATUS_FILE = RUNTIME_DIR / "match_status.json"
 HOTLOAD_READY_FILE = RUNTIME_DIR / "hotload_ready.json"
 # Protocol 2 = permanent-warmup sandbox; 3 = mode overhaul (!again, F5-F7
-# picks, records); 4 = spawn Director. A still-running older server must be
-# restarted, never hot-loaded into.
-HOTLOAD_PROTOCOL = 4
+# picks, records); 4 = spawn Director; 5 = no training mode / flood protection
+# off. A still-running older server must be restarted, never hot-loaded into.
+HOTLOAD_PROTOCOL = 5
 MATCH_STATES = {"countdown", "in_progress"}
 
 
@@ -64,8 +64,7 @@ class solo_directed(solo_arcade):
         self.last_match_request_id = self._existing_match_request_id()
         self.active_match_request_id = None
         self.next_match_request_poll = 0.0
-        self.next_training_assert = 0.0
-        self._force_training_contract()
+        self.next_warmup_check = 0.0
         self._write_hotload_ready()
         self.add_command("director", self.cmd_director)
         self.add_command(("again", "restart", "replay"), self.cmd_again)
@@ -95,39 +94,18 @@ class solo_directed(solo_arcade):
             pass
         return super().handle_unload(plugin)
 
-    # ---------- multiplayer-forfeit guard ----------
-    def _force_training_contract(self):
-        # shinqlx.allow_single_player() mutates the current level. During very
-        # early plugin bootstrap there may be no CurrentLevel yet, so start_solo
-        # also requests g_training=1 before +map. Reassert both on lifecycle
-        # boundaries and from live frames so a too-early initialization call
-        # cannot leave the real loaded level in normal multiplayer forfeit mode.
-        try:
-            self.set_cvar("g_training", "1")
-        except Exception:
-            pass
-        try:
-            minqlx.allow_single_player(True)
-        except Exception:
-            pass
-
-    def handle_new_game(self):
-        self._force_training_contract()
-        return super().handle_new_game()
-
+    # ---------- lifecycle ----------
+    # The old anti-forfeit "training contract" (g_training 1 plus
+    # allow_single_player(True), re-applied every second) is gone: it switched
+    # on Quake Live's training-match HUD ("This match will determine ..."),
+    # which flashed on every re-application. Permanent warmup (solo_arcade)
+    # is what prevents the forfeit.
     def handle_map(self, map_name, factory):
-        self._force_training_contract()
         result = super().handle_map(map_name, factory)
-        self.next_training_assert = 0.0
-        self._force_training_contract()
+        self.next_warmup_check = 0.0
         return result
 
-    def handle_player_loaded(self, player):
-        self._force_training_contract()
-        return super().handle_player_loaded(player)
-
     def handle_player_spawn(self, player):
-        self._force_training_contract()
         result = super().handle_player_spawn(player)
         if not is_player_object(player):
             return result
@@ -243,10 +221,8 @@ class solo_directed(solo_arcade):
         else:
             self.player_id = None
 
-        self._force_training_contract()
         self._configure_engine()
-        self.next_training_assert = 0.0
-        self._force_training_contract()
+        self.next_warmup_check = 0.0
         self._write_ready(True)
         self._write_hotload_ready()
         self._write_match_status("loading", request_id)
@@ -256,9 +232,8 @@ class solo_directed(solo_arcade):
 
     def handle_frame(self):
         now = time.time()
-        if now >= self.next_training_assert:
-            self.next_training_assert = now + 1.0
-            self._force_training_contract()
+        if now >= self.next_warmup_check:
+            self.next_warmup_check = now + 1.0
             # Backstop for the game_countdown/game_start hooks: if the engine
             # has left warmup by any route, put it back before it can forfeit.
             if self.game_state() in MATCH_STATES:

@@ -110,7 +110,7 @@ class WarmupSandboxTests(unittest.TestCase):
         self.assertEqual(server.game.state, "warmup")
         server.game.match_forced = True
         plugin.last_warmup_hold = 0.0
-        plugin.next_training_assert = 0.0
+        plugin.next_warmup_check = 0.0
         plugin.handle_frame()
         self.assertIn("abort", server.commands)
         self.assertEqual(server.game.state, "warmup")

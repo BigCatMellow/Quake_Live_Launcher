@@ -45,8 +45,11 @@ class PackageTests(unittest.TestCase):
     def test_solo_movement_session_and_bind_helpers(self):
         with tempfile.TemporaryDirectory() as td:
             game=Path(td); base=game/'baseq3'; base.mkdir(); user=game/'12345678901234567'/'baseq3'; user.mkdir(parents=True); cfg=user/'qzconfig.cfg'; cfg.write_text('bind A "+moveleft"\nbind D "+moveright"\nbind SPACE "+moveup"\n')
-            left,right,originals=launcher.detect_strafe_keys(game); self.assertEqual((left,right),('A','D')); generated,_=launcher.write_solo_controls_cfg(game,True); text=generated.read_text(); self.assertIn('cmd qldash left',text); self.assertIn('cmd qldash right',text); self.assertNotIn('SPACE',text)
-            cfg.write_text('bind A "+qll_side_left"\nbind D "+qll_side_right"\nbind SPACE "+moveup"\n'); self.assertTrue(launcher.restore_strafe_binds(game,originals)); restored=cfg.read_text(); self.assertIn('bind A "+moveleft"',restored); self.assertIn('bind D "+moveright"',restored); self.assertIn('bind SPACE "+moveup"',restored)
+            left,right,_=launcher.detect_strafe_keys(game); self.assertEqual((left,right),('A','D'))
+            generated,originals=launcher.write_solo_controls_cfg(game,True); text=generated.read_text()
+            # Dash is one dedicated key; strafe keys are never wrapped (a command per strafe tap = flood kick).
+            self.assertIn('cmd qldash auto',text); self.assertNotIn('cmd qldash left',text); self.assertNotIn('bind A',text); self.assertNotIn('bind D',text); self.assertNotIn('SPACE',text)
+            cfg.write_text('bind A "+moveleft"\nbind D "+moveright"\nbind SPACE "+moveup"\nbind MOUSE4 "cmd qldash auto"\n'); self.assertTrue(launcher.restore_strafe_binds(game,originals)); restored=cfg.read_text(); self.assertIn('bind A "+moveleft"',restored); self.assertIn('bind D "+moveright"',restored); self.assertIn('bind SPACE "+moveup"',restored); self.assertNotIn('qldash',restored)
     def test_solo_movement_ui_present(self):
         text=source_text('launcher_gui.py'); self.assertIn("label='Air control'",text); self.assertIn('Side thrusters: ground dodge + air dash',text); self.assertIn("('Standard','Enhanced','High')",text)
     def test_ground_dash_hop_present(self):
@@ -78,7 +81,7 @@ class PackageTests(unittest.TestCase):
         for token in ('+set g_doWarmup 1','+set sv_warmupReadyPercentage 1','+set g_warmupReadyDelay 0'):
             self.assertGreater(start.index(token),exec_at,token)
         self.assertNotIn('+set g_doWarmup 0',start); self.assertNotIn('+set sv_warmupReadyPercentage 0',start)
-        plugin=(ROOT/'solo_engine/plugins/solo_arcade.py').read_text(); self.assertIn('minqlx.allow_single_player(True)',plugin); self.assertIn('self.add_hook("player_loaded", self.handle_player_loaded)',plugin); self.assertIn('self._put_team(player, "red")',plugin); self.assertIn('self._put_team(player, "blue")',plugin)
+        plugin=(ROOT/'solo_engine/plugins/solo_arcade.py').read_text(); self.assertNotIn('minqlx.allow_single_player(True)',plugin); self.assertNotIn('+set g_training 1',start); self.assertGreater(start.index('+set g_training 0'),start.index('+exec server.cfg')); self.assertGreater(start.index('+set sv_floodProtect 0'),start.index('+exec server.cfg')); self.assertIn('set sv_floodProtect "0"',setup); self.assertIn('self.add_hook("player_loaded", self.handle_player_loaded)',plugin); self.assertIn('self._put_team(player, "red")',plugin); self.assertIn('self._put_team(player, "blue")',plugin)
     def test_director_runtime_is_packaged_and_selected(self):
         start=(ROOT/'solo_engine/start_solo.sh').read_text()
         for token in ('solo_directed.py','solo_director.py','director_runtime.py','director_learning.py'): self.assertIn(token,start)
