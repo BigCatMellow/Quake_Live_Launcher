@@ -27,7 +27,7 @@ class PackageTests(unittest.TestCase):
         cards=json.loads((ROOT/'resources/arcade_modes.json').read_text()); presets=json.loads((ROOT/'resources/presets.json').read_text()); self.assertGreaterEqual(len(cards),15)
         for c in cards: self.assertIn(c['title'],presets)
     def test_solo_mode_count(self):
-        modes=json.loads((ROOT/'resources/solo_modes.json').read_text()); self.assertEqual(len(modes),15); self.assertIn('arena_run',{m['id'] for m in modes})
+        modes=json.loads((ROOT/'resources/solo_modes.json').read_text()); self.assertEqual(len(modes),16); self.assertIn('arena_run',{m['id'] for m in modes})
     def test_chaos_cfg_generation(self):
         with tempfile.TemporaryDirectory() as td:
             game=Path(td); (game/'baseq3').mkdir(); cfg=launcher.write_session_cfg(game,'Weapon Chaos','weaponchaos','campgrounds',3,4); text=cfg.read_text(); self.assertIn('CHAOS:',text); self.assertIn('map_restart',text); self.assertIn('addbot',text)

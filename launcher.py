@@ -67,20 +67,31 @@ def _atomic_json(path: Path, payload: dict) -> None:
 # handled server-side like the qldash side thrusters). Originals (or "" when a
 # key was unbound) are restored by the existing restore watcher.
 SOLO_PICK_KEYS = ("F5", "F6", "F7")
-_BIND_LINE = re.compile(r'^\s*bind\s+(\S+)\s+"([^"]*)"', re.I | re.M)
+# Quake Live writes most single-token bind values UNQUOTED (this client's own
+# binds.cfg/repconfig.cfg: "bind a +moveleft", "bind SHIFT +speed" etc.) and
+# only quotes multi-word commands ("bind MOUSE5 \"weapon 7\""). A quoted-only
+# pattern silently matches nothing for the common case — confirmed live: it
+# missed this client's real SHIFT/+speed binding entirely, and a dash-key
+# candidate bound via an unquoted line would look "free" and get silently
+# picked/overwritten even though it collides with something real.
+_BIND_LINE = re.compile(r'^\s*bind\s+(\S+)\s+(?:"([^"]*)"|(\S+))', re.I | re.M)
 
 
 def _parse_binds(text: str) -> dict:
     binds: dict = {}
     for match in _BIND_LINE.finditer(text):
-        binds[match.group(1).upper()] = match.group(2)
+        key, quoted, bare = match.group(1), match.group(2), match.group(3)
+        binds[key.upper()] = quoted if quoted is not None else bare
     return binds
 
 
 def _replace_bind_line(text: str, key: str, command: str) -> str:
     safe = str(command).replace('"', "'")
     replacement = f'bind {key} "{safe}"'
-    pattern = re.compile(rf'^[ \t]*bind[ \t]+{re.escape(key)}[ \t]+"[^"\n]*".*$', re.I | re.M)
+    # Match both quoted and unquoted existing lines (see _BIND_LINE above) so
+    # an in-place replace actually finds this client's real bind line instead
+    # of always falling through to appending a duplicate at file end.
+    pattern = re.compile(rf'^[ \t]*bind[ \t]+{re.escape(key)}[ \t]+(?:"[^"\n]*"|\S+).*$', re.I | re.M)
     if pattern.search(text):
         return pattern.sub(lambda _m: replacement, text, count=1)
     if text and not text.endswith("\n"):
@@ -96,6 +107,38 @@ def _current_client_binds(game_dir: Path) -> dict:
         except Exception:
             continue
     return binds
+
+
+def restore_strafe_binds(game_dir, originals: dict) -> bool:
+    """Restore only the keys the Solo wrapper touched.
+
+    Overrides the payload's version, which patched only the single
+    newest-by-mtime candidate config. Quake Live splits client state across
+    multiple auto-generated configs (this install: repconfig.cfg holds the
+    real key binds; qzconfig.cfg holds hardware/other settings but still
+    gets the live in-memory alias table dumped into it on every exit) and
+    there is no reliable way to know in advance which file the *next* exit
+    will treat as authoritative. Guessing wrong left this client's real,
+    persistent repconfig.cfg with A and D permanently rebound to internal
+    Solo alias names outside of any Solo session — confirmed live and
+    repaired by hand. Patch every candidate file so the fix can't depend on
+    that guess.
+    """
+    if not originals:
+        return True
+    configs = _candidate_client_configs(Path(game_dir))
+    if not configs:
+        return False
+    ok = True
+    for cfg in configs:
+        try:
+            text = cfg.read_text(encoding="utf-8", errors="ignore")
+            for key, command in originals.items():
+                text = _replace_bind_line(text, key, command)
+            cfg.write_text(text, encoding="utf-8")
+        except Exception:
+            ok = False
+    return ok
 
 
 # Side-thruster dash lives on ONE dedicated key. Earlier builds sent a hidden

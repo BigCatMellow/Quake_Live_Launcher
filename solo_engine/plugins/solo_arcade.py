@@ -86,7 +86,7 @@ TIMED_GOAL_MODES = {
 # Modes where a human death ends the run.
 FATAL_DEATH_MODES = {
     "horde", "boss_rush", "gauntlet_run", "last_stand", "one_life",
-    "movement_hunter", "predator",
+    "movement_hunter", "predator", "duel_2v1",
 }
 
 WIPEOUT_LIVES = 3
@@ -124,7 +124,7 @@ SUPPORTED_MODES = {
     "arena_run", "horde", "gun_game", "boss_rush", "wipeout_solo",
     "gauntlet_run", "last_stand", "one_life", "bounty_hunt", "rocket_tag",
     "movement_hunter", "predator", "accuracy_trial", "speedrun_combat",
-    "random_loadout",
+    "random_loadout", "duel_2v1",
 }
 BOT_ROSTER_RUNTIME = tuple(BOT_ROSTER[:-1])
 WEAPON_NAMES = {
@@ -599,14 +599,29 @@ class solo_arcade(minqlx.Plugin):
         return self.skill
 
     def _kick_bot_id(self, client_id):
-        for bot in list(self.bot_players()):
-            if bot.id == client_id:
-                try:
-                    bot.kick("solo enemy defeated")
-                except Exception:
-                    try: minqlx.console_command(f"kick {client_id}")
-                    except Exception: pass
+        # Resolve the client directly instead of filtering bot_players()'s
+        # teams()-derived roster: a bot mid-death-transition can be briefly
+        # absent from that snapshot, which used to make this whole method
+        # silently no-op (no match -> loop ends -> nothing kicked, no
+        # exception, no log). The defeated "enemy" then just respawned via
+        # ordinary bot behavior and the round's all-dead clear condition
+        # became unreachable. Confirmed live: two enemies died and respawned
+        # repeatedly with zero kick/disconnect events in the log.
+        try:
+            bot = minqlx.Player(client_id)
+        except Exception as exc:
+            self._log(f"_kick_bot_id: could not resolve client {client_id}: {exc}")
+            bot = None
+        if bot is not None:
+            try:
+                bot.kick("solo enemy defeated")
                 return
+            except Exception as exc:
+                self._log(f"_kick_bot_id: bot.kick failed for {client_id}: {exc}")
+        try:
+            self._console_kick(client_id)
+        except Exception as exc:
+            self._log(f"_kick_bot_id: console kick failed for {client_id}: {exc}")
 
     def _retire_preactive_dead(self):
         ids = list(self.preactive_dead_ids)
@@ -628,7 +643,17 @@ class solo_arcade(minqlx.Plugin):
             if payload is not None:
                 self.pending_resume_payload = payload
                 return
-        self.controller.player_loaded(player.id)
+        entered_preparing = self.controller.player_loaded(player.id)
+        # The client can fire player_spawn (which is what normally starts the
+        # mode, below) before player_loaded fires — observed live: two
+        # spawns, then loaded, same second. player_loaded is what flips the
+        # phase to PREPARING, so if the spawns already ran and failed that
+        # check, nothing was left to catch it: the player just sits alive in
+        # an unstarted round forever. Start it here too the moment we enter
+        # PREPARING, not only from a future spawn event.
+        if entered_preparing and not self.mode_started:
+            self.mode_started = True
+            self._start_selected_mode()
 
     def handle_player_spawn(self, player):
         if not is_player_object(player):
@@ -846,6 +871,7 @@ class solo_arcade(minqlx.Plugin):
         elif self.mode == "accuracy_trial": self._start_continuous(4, "^6ACCURACY TRIAL^7 — 20 Lightning Gun kills. Results: hits, damage and time-to-kill.", goal=20)
         elif self.mode == "speedrun_combat": self._start_continuous(5, "^6SPEEDRUN COMBAT^7 — clear 15 kills as fast as possible.", goal=15)
         elif self.mode == "random_loadout": self._start_continuous(5, "^6RANDOM LOADOUT^7 — reach 20 kills; loadout rerolls every 4 kills and death.", goal=20)
+        elif self.mode == "duel_2v1": self._start_continuous(2, "^6DUEL 2v1^7 — two opponents, Director-tuned pressure. One life.", goal=0)
 
     # ---------- Horde ----------
     def _start_horde_wave(self):
@@ -1334,7 +1360,7 @@ class solo_arcade(minqlx.Plugin):
         return {
             "gun_game", "last_stand", "one_life", "bounty_hunt", "rocket_tag",
             "movement_hunter", "predator", "accuracy_trial", "speedrun_combat",
-            "random_loadout",
+            "random_loadout", "duel_2v1",
         }
 
     def _objective_cleared(self):
@@ -1860,7 +1886,15 @@ class solo_arcade(minqlx.Plugin):
             if speed > 950:
                 scale = 950 / speed; nvx *= scale; nvy *= scale
             nz = float(v.z) if was_airborne else max(float(v.z), self.ground_dash_hop)
-            player.velocity(x=nvx, y=nvy, z=nz)
+            # player.velocity()'s setter requires int coordinates on the real
+            # engine binding ("'float' object cannot be interpreted as an
+            # integer" otherwise); the fake test harness casts silently to
+            # float and can't catch this. Confirmed live: every dash crashed
+            # here, so nothing ever applied — the player mashing the dead key
+            # sent enough qldash commands in one second to trip Quake Live's
+            # flood protection on its own, independent of the dedicated-key
+            # fix above.
+            player.velocity(x=int(round(nvx)), y=int(round(nvy)), z=int(round(nz)))
             if not was_airborne:
                 self.airborne.add(player.id); self.ground_ticks[player.id] = 0
             self.dash_used[player.id] = int(self.dash_used.get(player.id, 0)) + 1
@@ -1885,7 +1919,7 @@ class solo_arcade(minqlx.Plugin):
                 elif player.id not in self.airborne:
                     self.ground_ticks[player.id] = 0
                 if jump and vz > 120 and prev <= 80:
-                    vz *= 1.0 + jump; player.velocity(z=vz); self.airborne.add(player.id)
+                    vz *= 1.0 + jump; player.velocity(z=int(round(vz))); self.airborne.add(player.id)
                 self.prev_vz[player.id] = vz
                 if regen and self.mode == "arena_run" and self.run:
                     if now - self.last_hurt_time.get(player.id, 0) >= 4.0 and now - self.last_regen_tick.get(player.id, 0) >= 1.0:

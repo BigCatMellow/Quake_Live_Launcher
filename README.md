@@ -167,6 +167,7 @@ That prevents an early bot kill during staggered spawning from deadlocking a wav
 | Accuracy Trial | 20 Lightning Gun kills; results show LG hits, damage per kill and average/best time-to-kill. |
 | Speedrun Combat | 15 kills; the clock starts when the enemies are live, with splits at 5 and 10 against your best. |
 | Random Loadout | Reach 20 kills; weapon set rerolls every 4 kills and after death. |
+| Duel 2v1 | Exactly two opponents at all times, Director-tuned pressure; one life. |
 
 ### After every run
 
