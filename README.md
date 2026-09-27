@@ -76,9 +76,16 @@ Open the **SOLO** tab and choose:
 
 **SET UP / REPAIR SOLO ENGINE**
 
-The first setup installs/updates the local Quake Live Dedicated Server and builds
-shinqlx in a private Python environment. On Linux Mint/Ubuntu it may ask for sudo
-only to install missing compiler/runtime packages.
+The first setup installs the local Quake Live Dedicated Server and builds shinqlx in a
+private Python environment. On Linux Mint/Ubuntu it may ask for sudo only to install
+missing compiler/runtime packages.
+
+Later runs check what is already there. An installed server is not downloaded again and
+an existing shinqlx build is not recompiled, so a re-run only refreshes the plugins and
+config and repeats the self-test (seconds). When everything is installed, the setup
+terminal asks: **Enter** for that quick check, or **r** for a full repair that
+re-downloads/validates the server and rebuilds shinqlx. From a terminal:
+`bash ~/.local/share/quake-live-launcher/solo_engine/setup_solo_engine.sh --repair`.
 
 v5 no longer marks the Solo Engine ready merely because files installed. Setup runs
 `solo_engine/self_test.sh`, which launches the real local QLDS + shinqlx +
